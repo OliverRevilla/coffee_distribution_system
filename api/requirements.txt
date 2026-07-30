@@ -1,0 +1,8 @@
+azure-functions
+pyodbc
+python-dotenv
+msal
+requests
+flask-cors
+pydantic
+python-dateutil

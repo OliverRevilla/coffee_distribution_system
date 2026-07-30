@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AZURE_SQL_CONNECTION_STRING": "Server=<server>.database.windows.net;Database=cafe-distribution;User Id=<user>;Password=<password>;Encrypt=True;",
+    "AZURE_B2C_TENANT_NAME": "<YOUR_TENANT_NAME>",
+    "AZURE_B2C_CLIENT_ID": "<YOUR_CLIENT_ID>",
+    "AZURE_B2C_CLIENT_SECRET": "<YOUR_CLIENT_SECRET>",
+    "AZURE_B2C_POLICY_NAME": "<YOUR_POLICY_NAME>",
+    "AZURE_MAPS_KEY": "<YOUR_MAPS_KEY>"
+  }
+}
