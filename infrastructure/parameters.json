@@ -2,14 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "value": "eastus" },
     "environmentName": { "value": "staging" },
-    "sqlAdminLogin": { "value": "cafeadmin" },
-    "sqlAdminPassword": { "value": "" },
-    "b2cTenantName": { "value": "" },
-    "b2cClientId": { "value": "" },
-    "b2cClientSecret": { "value": "" },
-    "b2cPolicyName": { "value": "" },
-    "azureMapsKey": { "value": "" }
+    "sqlAdminLogin": { "value": "cafeadmin" }
   }
 }

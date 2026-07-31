@@ -1,7 +1,7 @@
 import json
 import logging
 import azure.functions as func
-from shared.auth import require_auth, require_admin, get_user_from_request
+from shared.auth import require_auth, require_admin
 from shared.db import get_connection
 
 app = func.FunctionApp()
@@ -84,7 +84,7 @@ def create_route(req: func.HttpRequest) -> func.HttpResponse:
                                            latitude, longitude, estimated_arrival)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, route_id, i + 1, wp.get("customer_name"), wp.get("address"),
-               wp["latitude"], wp["longitude"], wp.get("estimated_arrival"))
+                wp["latitude"], wp["longitude"], wp.get("estimated_arrival"))
         conn.commit()
 
         return func.HttpResponse(

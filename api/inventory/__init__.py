@@ -1,7 +1,7 @@
 import json
 import logging
 import azure.functions as func
-from shared.auth import require_admin, get_user_from_request
+from shared.auth import require_admin
 from shared.db import get_connection
 
 app = func.FunctionApp()

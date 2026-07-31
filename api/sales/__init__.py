@@ -1,7 +1,7 @@
 import json
 import logging
 import azure.functions as func
-from shared.auth import require_auth, require_admin, get_user_from_request
+from shared.auth import require_auth
 from shared.db import get_connection
 
 app = func.FunctionApp()
@@ -98,8 +98,8 @@ def create_sale(req: func.HttpRequest) -> func.HttpResponse:
                              customer_name, customer_address, gps_latitude, gps_longitude, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, seller_id, variant_id, quantity, unit_price, total_amount,
-           body.get("customer_name"), body.get("customer_address"),
-           body.get("gps_latitude"), body.get("gps_longitude"), body.get("notes"))
+            body.get("customer_name"), body.get("customer_address"),
+            body.get("gps_latitude"), body.get("gps_longitude"), body.get("notes"))
         conn.commit()
         new_id = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()[0]
 

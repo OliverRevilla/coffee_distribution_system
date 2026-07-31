@@ -710,7 +710,7 @@ az group create --name "cafe-dist-rg" --location "eastus"
 
 # Deploy infrastructure (when Bicep templates are ready)
 az deployment group create \
-  --resource-group "cafe-dist-rg" \
+  --resource-group "cafe-dist-rg  " \
   --template-file infrastructure/main.bicep \
   --parameters infrastructure/parameters.json
 ```

@@ -11,29 +11,28 @@ param sqlAdminPassword string
 @description('SQL Admin login')
 param sqlAdminLogin string = 'cafeadmin'
 
-@description('B2C Tenant Name')
-param b2cTenantName string
-
-@description('B2C Client ID')
-param b2cClientId string
-
-@description('B2C Client Secret')
-@secure()
-param b2cClientSecret string
-
-@description('B2C Policy Name')
-param b2cPolicyName string
-
 @description('Azure Maps Key')
 @secure()
 param azureMapsKey string
-
-// ─── Resource Names ─────────────────────────────────────────────
 var sqlServerName = 'cafedist${environmentName}sql'
 var sqlDatabaseName = 'cafe-distribution'
-var keyVaultName = 'cafe-dist-${environmentName}-kv'
+var keyVaultName = 'kv${uniqueString(resourceGroup().id)}'
 var functionAppName = 'cafe-dist-${environmentName}-api'
 var staticWebAppName = 'cafe-dist-${environmentName}-web'
+var storageAccountName = 'cafedist${environmentName}stor'
+var appServicePlanName = 'cafe-dist-${environmentName}-plan'
+
+// ─── Storage Account ───────────────────────────────────────────
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  name: storageAccountName
+  location: location
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2'
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+  }
+}
 
 // ─── Key Vault ──────────────────────────────────────────────────
 resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
@@ -69,7 +68,6 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
   sku: { name: 'Basic', tier: 'Basic', capacity: 5 }
 }
 
-// Allow Azure services
 resource sqlFirewallAzure 'Microsoft.Sql/servers/firewallRules@2022-05-01-preview' = {
   parent: sqlServer
   name: 'AllowAzureServices'
@@ -79,12 +77,15 @@ resource sqlFirewallAzure 'Microsoft.Sql/servers/firewallRules@2022-05-01-previe
   }
 }
 
-// ─── App Service Plan (Consumption) ─────────────────────────────
+// ─── App Service Plan (Elastic Premium for Linux) ───────────────
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
-  name: 'cafe-dist-${environmentName}-plan'
+  name: appServicePlanName
   location: location
-  sku: { name: 'Y1', tier: 'Dynamic' }
-  reserved: true
+  kind: 'linux'
+  sku: { name: 'EP1', tier: 'ElasticPremium' }
+  properties: {
+    reserved: true
+  }
 }
 
 // ─── Function App ───────────────────────────────────────────────
@@ -98,14 +99,13 @@ resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
     siteConfig: {
       linuxFxVersion: 'Python|3.11'
       appSettings: [
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${keyVaultName};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(keyVault.id, '2023-02-01').keys[0].value}' }
+        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
+        { name: 'WEBSITE_CONTENTAZUREFILESHARE', value: '' }
+        { name: 'WEBSITE_CONTENTOVERWRITE', value: 'true' }
+        { name: 'WEBSITE_SKIP_CONTENTSHARE_VALIDATION', value: '1' }
         { name: 'AZURE_SQL_CONNECTION_STRING', value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;' }
-        { name: 'AZURE_B2C_TENANT_NAME', value: b2cTenantName }
-        { name: 'AZURE_B2C_CLIENT_ID', value: b2cClientId }
-        { name: 'AZURE_B2C_CLIENT_SECRET', value: b2cClientSecret }
-        { name: 'AZURE_B2C_POLICY_NAME', value: b2cPolicyName }
         { name: 'AZURE_MAPS_KEY', value: azureMapsKey }
       ]
       cors: {
@@ -133,18 +133,6 @@ resource keyVaultSecretSql 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
   }
 }
 
-resource keyVaultSecretB2CClientId 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
-  parent: keyVault
-  name: 'AZURE-B2C-CLIENT-ID'
-  properties: { value: b2cClientId }
-}
-
-resource keyVaultSecretB2CClientSecret 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
-  parent: keyVault
-  name: 'AZURE-B2C-CLIENT-SECRET'
-  properties: { value: b2cClientSecret }
-}
-
 resource keyVaultSecretMapsKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
   parent: keyVault
   name: 'AZURE-MAPS-KEY'
@@ -156,4 +144,5 @@ output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output functionAppName string = functionApp.name
 output staticWebAppName string = staticWebApp.name
 output keyVaultName string = keyVault.name
+output storageAccountName string = storageAccount.name
 output resourceGroupName string = resourceGroup().name

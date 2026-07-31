@@ -7,6 +7,7 @@
 .env.staging
 *.pem
 *.key
+DEVOPS.md
 
 # ===========================
 # Azure Functions
