@@ -170,10 +170,6 @@ Key Vault name must be 3-24 alphanumeric chars, no consecutive hyphens. Already 
 
 Static Web Apps doesn't support `eastus`. Use `westus2` or `eastus2`.
 
-### "Invalid SKU" for Elastic Premium
-
-Try a different region. EP1 is not available everywhere.
-
 ### "No VM quota"
 
 Try a different region:
@@ -181,6 +177,12 @@ Try a different region:
 ```bash
 az account list-locations --output table
 ```
+
+### Consumption Plan Limitations
+
+- No VNET integration (not needed for this project)
+- Cold start may take 1-2 seconds on first request
+- Max 10 minute execution timeout per function
 
 ---
 
@@ -210,9 +212,9 @@ az group delete --name "coffee-distribution-rg" --yes --no-wait
 | Resource | Monthly Cost |
 |----------|--------------|
 | SQL Database (Basic) | ~$5 |
-| Function App (EP1) | ~$150 |
+| Function App (Consumption Y1) | ~$0-5 |
 | Static Web App (Standard) | ~$9 |
 | Azure Maps (Gen2) | Pay per use (free tier available) |
 | Storage Account | ~$1 |
 | Key Vault | ~$0.03/10K operations |
-| **Total** | **~$165/month + Azure Maps usage** |
+| **Total** | **~$15-16/month** |

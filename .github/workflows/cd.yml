@@ -6,83 +6,17 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-staging:
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-
-      # ─── Deploy Infrastructure ──────────────────────────
-      - uses: Azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Deploy Azure Resources
-        run: |
-          az deployment group create \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --template-file infrastructure/main.bicep \
-            --parameters infrastructure/parameters.json \
-            --parameters \
-              environmentName=staging \
-              sqlAdminPassword=${{ secrets.SQL_ADMIN_PASSWORD }} \
-              azureMapsKey=${{ secrets.AZURE_MAPS_KEY }}
-
-      # ─── Build & Deploy API ─────────────────────────────
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install API dependencies
-        run: pip install -r api/requirements.txt
-      - name: Deploy Azure Functions
-        uses: Azure/functions-action@v1
-        with:
-          app-name: cafe-dist-staging-api
-          package: api/
-          publish-profile: ${{ secrets.AZURE_FUNCTIONS_PUBLISH_PROFILE_STAGING }}
-
-      # ─── Build & Deploy Web App ─────────────────────────
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Build Web App
-        run: cd web && npm ci && npm run build
-      - name: Deploy Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN_STAGING }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "web/dist"
-          api_location: "api"
-
-      # ─── Run Integration Tests ──────────────────────────
-      - name: Run integration tests
-        run: |
-          cd api && pytest tests/integration/ -v --base-url=${{ secrets.STAGING_URL }} || true
-
   deploy-production:
-    needs: deploy-staging
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
 
-      # ─── Deploy Infrastructure ──────────────────────────
-      - uses: Azure/login@v2
+      # ─── Deploy Azure Functions ──────────────────────────
+      - uses: actions/setup-python@v5
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Deploy Azure Resources
-        run: |
-          az deployment group create \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --template-file infrastructure/main.bicep \
-            --parameters infrastructure/parameters.json \
-            --parameters \
-              environmentName=production \
-              sqlAdminPassword=${{ secrets.SQL_ADMIN_PASSWORD }} \
-              azureMapsKey=${{ secrets.AZURE_MAPS_KEY }}
-
-      # ─── Deploy API ─────────────────────────────────────
+          python-version: "3.11"
+      - run: pip install -r api/requirements.txt
       - name: Deploy Azure Functions
         uses: Azure/functions-action@v1
         with:
@@ -90,7 +24,11 @@ jobs:
           package: api/
           publish-profile: ${{ secrets.AZURE_FUNCTIONS_PUBLISH_PROFILE }}
 
-      # ─── Deploy Web App ─────────────────────────────────
+      # ─── Deploy Static Web App ──────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: cd web && npm ci && npm run build
       - name: Deploy Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
@@ -99,26 +37,3 @@ jobs:
           action: "upload"
           app_location: "web/dist"
           api_location: "api"
-
-  # ─── CodeQL Security Scanning (Weekly) ──────────────────
-  codeql-analysis:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ['javascript', 'python']
-    steps:
-      - uses: actions/checkout@v4
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
-        with:
-          languages: ${{ matrix.language }}
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2

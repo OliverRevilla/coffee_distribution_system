@@ -77,12 +77,12 @@ resource sqlFirewallAzure 'Microsoft.Sql/servers/firewallRules@2022-05-01-previe
   }
 }
 
-// ─── App Service Plan (Elastic Premium for Linux) ───────────────
+// ─── App Service Plan (Consumption - Linux) ─────────────────────
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
   name: appServicePlanName
   location: location
   kind: 'linux'
-  sku: { name: 'EP1', tier: 'ElasticPremium' }
+  sku: { name: 'Y1', tier: 'Dynamic' }
   properties: {
     reserved: true
   }
