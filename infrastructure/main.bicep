@@ -4,18 +4,19 @@ param location string = resourceGroup().location
 @description('Environment name (staging or production)')
 param environmentName string = 'staging'
 
-@description('SQL Admin password')
+@description('PostgreSQL Admin password')
 @secure()
-param sqlAdminPassword string
+param postgresAdminPassword string
 
-@description('SQL Admin login')
-param sqlAdminLogin string = 'cafeadmin'
+@description('PostgreSQL Admin login')
+param postgresAdminLogin string = 'cafeadmin'
 
 @description('Azure Maps Key')
 @secure()
 param azureMapsKey string
-var sqlServerName = 'cafedist${environmentName}sql'
-var sqlDatabaseName = 'cafe-distribution'
+
+var postgresServerName = 'cafedist${environmentName}pg'
+var postgresDatabaseName = 'cafe_distribution'
 var keyVaultName = 'kv${uniqueString(resourceGroup().id)}'
 var functionAppName = 'cafe-dist-${environmentName}-api'
 var staticWebAppName = 'cafe-dist-${environmentName}-web'
@@ -49,32 +50,24 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
   }
 }
 
-// ─── SQL Server ─────────────────────────────────────────────────
-resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
-  name: sqlServerName
+// ─── Azure Database for PostgreSQL ─────────────────────────────
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
+  name: postgresServerName
   location: location
+  sku: { name: 'Standard_B2ms', tier: 'Burstable' }
   properties: {
-    administratorLogin: sqlAdminLogin
-    administratorLoginPassword: sqlAdminPassword
-    version: '12.0'
-    minimalTlsVersion: '1.2'
+    version: '16'
+    administratorLogin: postgresAdminLogin
+    administratorLoginPassword: postgresAdminPassword
+    storage: { storageSizeGB: 32 }
+    backup: { backupRetentionDays: 7, geoRedundantBackup: 'Disabled' }
+    highAvailability: { mode: 'Disabled' }
   }
 }
 
-resource sqlDatabase 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
-  parent: sqlServer
-  name: sqlDatabaseName
-  location: location
-  sku: { name: 'Basic', tier: 'Basic', capacity: 5 }
-}
-
-resource sqlFirewallAzure 'Microsoft.Sql/servers/firewallRules@2022-05-01-preview' = {
-  parent: sqlServer
-  name: 'AllowAzureServices'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
-  }
+resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
+  parent: postgresServer
+  name: postgresDatabaseName
 }
 
 // ─── App Service Plan (Consumption - Linux) ─────────────────────
@@ -105,7 +98,7 @@ resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
         { name: 'WEBSITE_CONTENTAZUREFILESHARE', value: '' }
         { name: 'WEBSITE_CONTENTOVERWRITE', value: 'true' }
         { name: 'WEBSITE_SKIP_CONTENTSHARE_VALIDATION', value: '1' }
-        { name: 'AZURE_SQL_CONNECTION_STRING', value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;' }
+        { name: 'DATABASE_URL', value: 'postgresql://${postgresAdminLogin}:${postgresAdminPassword}@${postgresServer.properties.fullyQualifiedDomainName}:5432/${postgresDatabaseName}?sslmode=require' }
         { name: 'AZURE_MAPS_KEY', value: azureMapsKey }
       ]
       cors: {
@@ -125,11 +118,11 @@ resource staticWebApp 'Microsoft.Web/staticSites@2022-09-01' = {
 }
 
 // ─── Key Vault Secrets ──────────────────────────────────────────
-resource keyVaultSecretSql 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
+resource keyVaultSecretDb 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
   parent: keyVault
-  name: 'AZURE-SQL-CONNECTION-STRING'
+  name: 'DATABASE-URL'
   properties: {
-    value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+    value: 'postgresql://${postgresAdminLogin}:${postgresAdminPassword}@${postgresServer.properties.fullyQualifiedDomainName}:5432/${postgresDatabaseName}?sslmode=require'
   }
 }
 
@@ -140,7 +133,7 @@ resource keyVaultSecretMapsKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = 
 }
 
 // ─── Outputs ────────────────────────────────────────────────────
-output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
+output postgresServerFqdn string = postgresServer.properties.fullyQualifiedDomainName
 output functionAppName string = functionApp.name
 output staticWebAppName string = staticWebApp.name
 output keyVaultName string = keyVault.name

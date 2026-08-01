@@ -16,8 +16,8 @@ def list_variants(req: func.HttpRequest) -> func.HttpResponse:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT id, name, description, sku, price, image_url, is_active, created_at
-            FROM CoffeeVariants
-            WHERE is_active = 1
+            FROM distribution.coffee_variants
+            WHERE is_active = TRUE
             ORDER BY name
         """)
         columns = [desc[0] for desc in cursor.description]
@@ -50,12 +50,13 @@ def create_variant(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO CoffeeVariants (name, description, sku, price, image_url)
-            VALUES (?, ?, ?, ?, ?)
-        """, body["name"], body.get("description"), body["sku"],
-           body["price"], body.get("image_url"))
+            INSERT INTO distribution.coffee_variants (name, description, sku, price, image_url)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (body["name"], body.get("description"), body["sku"],
+              body["price"], body.get("image_url")))
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        new_id = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()[0]
         return func.HttpResponse(
             json.dumps({"id": new_id, "message": "Variant created"}),
             status_code=201,

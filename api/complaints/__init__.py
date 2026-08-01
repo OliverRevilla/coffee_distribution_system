@@ -23,8 +23,8 @@ def list_complaints(req: func.HttpRequest) -> func.HttpResponse:
                        c.customer_name, c.subject, c.description,
                        c.category, c.status, c.priority,
                        c.created_at, c.resolved_at, c.resolution_notes
-                FROM Complaints c
-                JOIN Users u ON c.seller_id = u.id
+                FROM distribution.complaints c
+                JOIN distribution.users u ON c.seller_id = u.id
                 ORDER BY c.created_at DESC
             """)
         else:
@@ -33,11 +33,11 @@ def list_complaints(req: func.HttpRequest) -> func.HttpResponse:
                        c.customer_name, c.subject, c.description,
                        c.category, c.status, c.priority,
                        c.created_at, c.resolved_at, c.resolution_notes
-                FROM Complaints c
-                JOIN Users u ON c.seller_id = u.id
-                WHERE c.seller_id = ?
+                FROM distribution.complaints c
+                JOIN distribution.users u ON c.seller_id = u.id
+                WHERE c.seller_id = %s
                 ORDER BY c.created_at DESC
-            """, user.get("user_id"))
+            """, (user.get("user_id"),))
 
         columns = [desc[0] for desc in cursor.description]
         complaints = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -74,14 +74,15 @@ def create_complaint(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO Complaints (seller_id, customer_name, subject, description,
+            INSERT INTO distribution.complaints (seller_id, customer_name, subject, description,
                                    category, priority)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, seller_id, body.get("customer_name"), body["subject"],
-            body["description"], body.get("category", "other"),
-            body.get("priority", "medium"))
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (seller_id, body.get("customer_name"), body["subject"],
+              body["description"], body.get("category", "other"),
+              body.get("priority", "medium")))
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        new_id = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()[0]
 
         return func.HttpResponse(
             json.dumps({"id": new_id, "message": "Complaint submitted"}),
@@ -107,11 +108,11 @@ def update_complaint(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE Complaints
-            SET status = ?, priority = ?, resolution_notes = ?
-            WHERE id = ?
-        """, body.get("status"), body.get("priority"),
-           body.get("resolution_notes"), complaint_id)
+            UPDATE distribution.complaints
+            SET status = %s, priority = %s, resolution_notes = %s
+            WHERE id = %s
+        """, (body.get("status"), body.get("priority"),
+              body.get("resolution_notes"), complaint_id))
         conn.commit()
         if cursor.rowcount == 0:
             return func.HttpResponse(
@@ -143,11 +144,11 @@ def resolve_complaint(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE Complaints
-            SET status = 'resolved', resolved_at = SYSUTCDATETIME(),
-                resolution_notes = ?
-            WHERE id = ?
-        """, body.get("resolution_notes", ""), complaint_id)
+            UPDATE distribution.complaints
+            SET status = 'resolved', resolved_at = NOW(),
+                resolution_notes = %s
+            WHERE id = %s
+        """, (body.get("resolution_notes", ""), complaint_id))
         conn.commit()
         if cursor.rowcount == 0:
             return func.HttpResponse(

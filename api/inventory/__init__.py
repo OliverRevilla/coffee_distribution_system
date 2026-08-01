@@ -17,14 +17,13 @@ def list_inventory(req: func.HttpRequest) -> func.HttpResponse:
         cursor.execute("""
             SELECT i.id, i.variant_id, cv.name, cv.sku, i.quantity,
                    i.warehouse_location, i.reorder_point, i.last_updated
-            FROM Inventory i
-            JOIN CoffeeVariants cv ON i.variant_id = cv.id
+            FROM distribution.inventory i
+            JOIN distribution.coffee_variants cv ON i.variant_id = cv.id
             ORDER BY cv.name
         """)
         columns = [desc[0] for desc in cursor.description]
         items = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-        # Convert datetime objects to strings
         for item in items:
             if item.get("last_updated"):
                 item["last_updated"] = item["last_updated"].isoformat()
@@ -54,10 +53,10 @@ def get_inventory(req: func.HttpRequest) -> func.HttpResponse:
         cursor.execute("""
             SELECT i.id, i.variant_id, cv.name, cv.sku, i.quantity,
                    i.warehouse_location, i.reorder_point, i.last_updated
-            FROM Inventory i
-            JOIN CoffeeVariants cv ON i.variant_id = cv.id
-            WHERE i.id = ?
-        """, item_id)
+            FROM distribution.inventory i
+            JOIN distribution.coffee_variants cv ON i.variant_id = cv.id
+            WHERE i.id = %s
+        """, (item_id,))
         columns = [desc[0] for desc in cursor.description]
         row = cursor.fetchone()
         if not row:
@@ -93,13 +92,14 @@ def create_inventory(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO Inventory (variant_id, quantity, warehouse_location, reorder_point, updated_by)
-            VALUES (?, ?, ?, ?, ?)
-        """, body["variant_id"], body.get("quantity", 0),
-           body.get("warehouse_location"), body.get("reorder_point", 10),
-           body.get("updated_by"))
+            INSERT INTO distribution.inventory (variant_id, quantity, warehouse_location, reorder_point, updated_by)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (body["variant_id"], body.get("quantity", 0),
+              body.get("warehouse_location"), body.get("reorder_point", 10),
+              body.get("updated_by")))
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        new_id = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()[0]
         return func.HttpResponse(
             json.dumps({"id": new_id, "message": "Inventory item created"}),
             status_code=201,
@@ -124,12 +124,12 @@ def update_inventory(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE Inventory
-            SET quantity = ?, warehouse_location = ?, reorder_point = ?,
-                last_updated = SYSUTCDATETIME(), updated_by = ?
-            WHERE id = ?
-        """, body.get("quantity"), body.get("warehouse_location"),
-           body.get("reorder_point"), body.get("updated_by"), item_id)
+            UPDATE distribution.inventory
+            SET quantity = %s, warehouse_location = %s, reorder_point = %s,
+                last_updated = NOW(), updated_by = %s
+            WHERE id = %s
+        """, (body.get("quantity"), body.get("warehouse_location"),
+              body.get("reorder_point"), body.get("updated_by"), item_id))
         conn.commit()
         if cursor.rowcount == 0:
             return func.HttpResponse(

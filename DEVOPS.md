@@ -8,8 +8,8 @@
 │  Resource Group: coffee-distribution-rg (westus2)       │
 │                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │ SQL Server  │  │ Function App│  │ Static Web  │    │
-│  │ + Database  │  │   (API)     │  │    App      │    │
+│  │ PostgreSQL  │  │ Function App│  │ Static Web  │    │
+│  │ (Flexible)  │  │   (API)     │  │    App      │    │
 │  └─────────────┘  └─────────────┘  └─────────────┘    │
 │                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
@@ -63,7 +63,7 @@ az ad sp create-for-rbac \
 
 ---
 
-## Step 4: Create SQL Admin Password
+## Step 4: Create PostgreSQL Admin Password
 
 ```bash
 openssl rand -base64 16
@@ -99,7 +99,7 @@ az deployment group create \
   --template-file infrastructure/main.bicep \
   --parameters \
     environmentName=production \
-    sqlAdminPassword="<YOUR_SQL_PASSWORD>" \
+    postgresAdminPassword="<YOUR_POSTGRES_PASSWORD>" \
     azureMapsKey="<YOUR_AZURE_MAPS_KEY>"
 ```
 
@@ -135,7 +135,7 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 |-------------|---------------|
 | `AZURE_CREDENTIALS` | Step 3 — entire JSON output |
 | `AZURE_RESOURCE_GROUP` | `coffee-distribution-rg` |
-| `SQL_ADMIN_PASSWORD` | Step 4 — your password |
+| `POSTGRES_ADMIN_PASSWORD` | Step 4 — your password |
 | `AZURE_MAPS_KEY` | Step 5 — primaryKey |
 | `AZURE_FUNCTIONS_PUBLISH_PROFILE` | Step 7 — entire XML |
 | `AZURE_STATIC_WEB_APPS_TOKEN` | Step 8 — token |
@@ -211,10 +211,10 @@ az group delete --name "coffee-distribution-rg" --yes --no-wait
 
 | Resource | Monthly Cost |
 |----------|--------------|
-| SQL Database (Basic) | ~$5 |
+| PostgreSQL (Burstable B1ms) | ~$12 |
 | Function App (Consumption Y1) | ~$0-5 |
 | Static Web App (Standard) | ~$9 |
 | Azure Maps (Gen2) | Pay per use (free tier available) |
 | Storage Account | ~$1 |
 | Key Vault | ~$0.03/10K operations |
-| **Total** | **~$15-16/month** |
+| **Total** | **~$22-23/month** |

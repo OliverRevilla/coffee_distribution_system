@@ -28,7 +28,7 @@ A cloud-based distribution management system for a coffee company with multiple 
 | **Users** | 2 Administrators + up to 20 Sellers |
 | **Access** | Web (React) + Mobile (React Native) from any device |
 | **Tracking** | Real-time GPS tracking for delivery routes |
-| **Budget** | ~$14/month estimated Azure cost |
+| **Budget** | ~$15-16/month estimated Azure cost |
 
 ---
 
@@ -66,9 +66,9 @@ A cloud-based distribution management system for a coffee company with multiple 
           ┌─────────┴─────────┐
           ▼                   ▼
 ┌──────────────────┐  ┌──────────────────┐
-│  Azure SQL       │  │  Azure Maps      │
-│  Database        │  │  Service         │
-│  (~$5/month)     │  │  (GPS Tracking)  │
+│  Azure Database  │  │  Azure Maps      │
+│  for PostgreSQL  │  │  Service         │
+│  (~$12/month)    │  │  (GPS Tracking)  │
 └──────────────────┘  └──────────────────┘
 ```
 
@@ -79,12 +79,13 @@ A cloud-based distribution management system for a coffee company with multiple 
 | Service | Purpose | Tier | Est. Cost |
 |---------|---------|------|-----------|
 | **Azure AD B2C** | Authentication & role-based access | Free | $0 (50K auths/month) |
-| **Azure Static Web Apps** | React hosting + CI/CD + integrated API | Standard | $9/month |
-| **Azure Functions** | Serverless Python API | Consumption | ~$0 (1M free requests) |
-| **Azure SQL Database** | Relational data store | Basic | ~$5/month |
-| **Azure Maps** | GPS tracking & route visualization | Free | $0 (1K txns/day) |
-| **Azure Key Vault** | Secrets management | Standard | ~$0 ( ops) |
-| **Total** | | | **~$14/month** |
+| **Azure Static Web Apps** | React hosting + CI/CD + integrated API | Standard | ~$9/month |
+| **Azure Functions** | Serverless Python API | Consumption (Y1) | ~$0-5/month |
+| **Azure Database for PostgreSQL** | Relational data store | Burstable B1ms | ~$12/month |
+| **Azure Maps** | GPS tracking & route visualization | Gen2 | Pay per use |
+| **Azure Key Vault** | Secrets management | Standard | ~$0.03/10K ops |
+| **Storage Account** | Functions runtime storage | Standard LRS | ~$1/month |
+| **Total** | | | **~$22-23/month** |
 
 ---
 
@@ -93,107 +94,107 @@ A cloud-based distribution management system for a coffee company with multiple 
 ```sql
 -- Users table (synced from Azure AD B2C)
 CREATE TABLE Users (
-    id              INT PRIMARY KEY IDENTITY,
-    email           NVARCHAR(256) NOT NULL UNIQUE,
-    full_name       NVARCHAR(256) NOT NULL,
-    role            NVARCHAR(20) NOT NULL CHECK (role IN ('admin', 'seller')),
-    status          NVARCHAR(20) NOT NULL DEFAULT 'active',
-    azure_b2c_id    NVARCHAR(256) NOT NULL UNIQUE,
-    created_at      DATETIME2 DEFAULT SYSUTCDATETIME()
+    id              SERIAL PRIMARY KEY,
+    email           VARCHAR(256) NOT NULL UNIQUE,
+    full_name       VARCHAR(256) NOT NULL,
+    role            VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'seller')),
+    status          VARCHAR(20) NOT NULL DEFAULT 'active',
+    azure_b2c_id    VARCHAR(256) NOT NULL UNIQUE,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Coffee variants
 CREATE TABLE CoffeeVariants (
-    id              INT PRIMARY KEY IDENTITY,
-    name            NVARCHAR(256) NOT NULL,
-    description     NVARCHAR(MAX),
-    sku             NVARCHAR(50) NOT NULL UNIQUE,
+    id              SERIAL PRIMARY KEY,
+    name            VARCHAR(256) NOT NULL,
+    description     TEXT,
+    sku             VARCHAR(50) NOT NULL UNIQUE,
     price           DECIMAL(10,2) NOT NULL,
-    image_url       NVARCHAR(512),
-    is_active       BIT DEFAULT 1,
-    created_at      DATETIME2 DEFAULT SYSUTCDATETIME()
+    image_url       VARCHAR(512),
+    is_active       BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Inventory tracking
 CREATE TABLE Inventory (
-    id                  INT PRIMARY KEY IDENTITY,
+    id                  SERIAL PRIMARY KEY,
     variant_id          INT NOT NULL REFERENCES CoffeeVariants(id),
     quantity            INT NOT NULL DEFAULT 0,
-    warehouse_location  NVARCHAR(256),
+    warehouse_location  VARCHAR(256),
     reorder_point       INT DEFAULT 10,
-    last_updated        DATETIME2 DEFAULT SYSUTCDATETIME(),
+    last_updated        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_by          INT REFERENCES Users(id)
 );
 
 -- Sales records
 CREATE TABLE Sales (
-    id              INT PRIMARY KEY IDENTITY,
+    id              SERIAL PRIMARY KEY,
     seller_id       INT NOT NULL REFERENCES Users(id),
     variant_id      INT NOT NULL REFERENCES CoffeeVariants(id),
     quantity        INT NOT NULL,
     unit_price      DECIMAL(10,2) NOT NULL,
     total_amount    DECIMAL(10,2) NOT NULL,
-    customer_name   NVARCHAR(256),
-    customer_address NVARCHAR(512),
+    customer_name   VARCHAR(256),
+    customer_address VARCHAR(512),
     gps_latitude    DECIMAL(9,6),
     gps_longitude   DECIMAL(9,6),
-    sale_date       DATETIME2 DEFAULT SYSUTCDATETIME(),
-    notes           NVARCHAR(MAX)
+    sale_date       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes           TEXT
 );
 
 -- Delivery routes
 CREATE TABLE Routes (
-    id                  INT PRIMARY KEY IDENTITY,
-    name                NVARCHAR(256) NOT NULL,
-    description         NVARCHAR(MAX),
+    id                  SERIAL PRIMARY KEY,
+    name                VARCHAR(256) NOT NULL,
+    description         TEXT,
     assigned_seller_id  INT REFERENCES Users(id),
-    status              NVARCHAR(20) DEFAULT 'pending'
+    status              VARCHAR(20) DEFAULT 'pending'
                         CHECK (status IN ('pending', 'in_progress', 'completed')),
     route_date          DATE NOT NULL,
-    created_at          DATETIME2 DEFAULT SYSUTCDATETIME()
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Route waypoints (delivery stops)
 CREATE TABLE RouteWaypoints (
-    id                  INT PRIMARY KEY IDENTITY,
+    id                  SERIAL PRIMARY KEY,
     route_id            INT NOT NULL REFERENCES Routes(id) ON DELETE CASCADE,
     sequence            INT NOT NULL,
-    customer_name       NVARCHAR(256),
-    address             NVARCHAR(512),
+    customer_name       VARCHAR(256),
+    address             VARCHAR(512),
     latitude            DECIMAL(9,6) NOT NULL,
     longitude           DECIMAL(9,6) NOT NULL,
-    estimated_arrival   DATETIME2,
-    actual_arrival      DATETIME2,
-    status              NVARCHAR(20) DEFAULT 'pending'
+    estimated_arrival   TIMESTAMP,
+    actual_arrival      TIMESTAMP,
+    status              VARCHAR(20) DEFAULT 'pending'
                         CHECK (status IN ('pending', 'visited', 'skipped')),
-    notes               NVARCHAR(MAX)
+    notes               TEXT
 );
 
 -- GPS location tracking
 CREATE TABLE GPSLocations (
-    id          BIGINT PRIMARY KEY IDENTITY,
+    id          BIGSERIAL PRIMARY KEY,
     seller_id   INT NOT NULL REFERENCES Users(id),
     latitude    DECIMAL(9,6) NOT NULL,
     longitude   DECIMAL(9,6) NOT NULL,
     accuracy    DECIMAL(5,2),
-    timestamp   DATETIME2 DEFAULT SYSUTCDATETIME()
+    timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Complaints
 CREATE TABLE Complaints (
-    id              INT PRIMARY KEY IDENTITY,
+    id              SERIAL PRIMARY KEY,
     seller_id       INT NOT NULL REFERENCES Users(id),
-    customer_name   NVARCHAR(256),
-    subject         NVARCHAR(256) NOT NULL,
-    description     NVARCHAR(MAX) NOT NULL,
-    category        NVARCHAR(50) CHECK (category IN ('quality', 'delivery', 'pricing', 'other')),
-    status          NVARCHAR(20) DEFAULT 'open'
+    customer_name   VARCHAR(256),
+    subject         VARCHAR(256) NOT NULL,
+    description     TEXT NOT NULL,
+    category        VARCHAR(50) CHECK (category IN ('quality', 'delivery', 'pricing', 'other')),
+    status          VARCHAR(20) DEFAULT 'open'
                     CHECK (status IN ('open', 'in_progress', 'resolved', 'closed')),
-    priority        NVARCHAR(10) DEFAULT 'medium'
+    priority        VARCHAR(10) DEFAULT 'medium'
                     CHECK (priority IN ('low', 'medium', 'high')),
-    created_at      DATETIME2 DEFAULT SYSUTCDATETIME(),
-    resolved_at     DATETIME2,
-    resolution_notes NVARCHAR(MAX)
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at     TIMESTAMP,
+    resolution_notes TEXT
 );
 ```
 
@@ -260,13 +261,12 @@ All endpoints are served via Azure Functions (Python) and require Azure AD B2C a
 
 | Secret Name | Description | Where Used |
 |-------------|-------------|------------|
-| `AZURE_SQL_CONNECTION_STRING` | Azure SQL Database connection string | Azure Functions App Settings |
-| `AZURE_B2C_TENANT_NAME` | Azure AD B2C tenant identifier | Azure Functions + Static Web Apps |
-| `AZURE_B2C_CLIENT_ID` | App registration client ID | Azure Functions + Static Web Apps |
-| `AZURE_B2C_CLIENT_SECRET` | App registration client secret | Azure Functions App Settings |
-| `AZURE_B2C_POLICY_NAME` | Sign-up/sign-in user flow name | Static Web Apps config |
-| `AZURE_MAPS_SUBSCRIPTION_KEY` | Azure Maps API key | Azure Functions App Settings |
-| `AZURE_WEBPUBSUB_CONNECTION_STRING` | Real-time GPS updates (optional) | Azure Functions App Settings |
+| `DATABASE_URL` | PostgreSQL connection string | Azure Functions App Settings (auto via Bicep) |
+| `AZURE_MAPS_KEY` | Azure Maps API key | Azure Functions App Settings (auto via Bicep) |
+| `AZURE_B2C_TENANT_NAME` | Azure AD B2C tenant identifier | Azure Functions + Static Web Apps (manual) |
+| `AZURE_B2C_CLIENT_ID` | App registration client ID | Azure Functions + Static Web Apps (manual) |
+| `AZURE_B2C_CLIENT_SECRET` | App registration client secret | Azure Functions App Settings (manual) |
+| `AZURE_B2C_POLICY_NAME` | Sign-up/sign-in user flow name | Static Web Apps config (manual) |
 
 ### Where Secrets Are Stored
 
@@ -277,7 +277,7 @@ All endpoints are served via Azure Functions (Python) and require Azure AD B2C a
 │  Developer Local ──► GitHub Secrets (CI/CD)             │
 │         │                    │                          │
 │         ▼                    ▼                          │
-│  .env (gitignored)    Azure DevOps Pipeline            │
+│  .env (gitignored)    GitHub Actions                    │
 │                             │                          │
 │                             ▼                          │
 │                    Azure Key Vault                     │
@@ -315,32 +315,28 @@ build/
 *.log
 ```
 
-### Azure Key Vault Setup
+### Key Vault Secrets Setup
 
-1. Create Key Vault via Azure Portal or CLI:
-   ```bash
-   az keyvault create \
-     --name "cafe-dist-keyvault" \
-     --resource-group "cafe-dist-rg" \
-     --location "eastus" \
-     --sku standard
-   ```
+Key Vault is created automatically by the Bicep template. Secrets are stored automatically:
 
-2. Store secrets (replace with actual values):
-   ```bash
-   az keyvault secret set --vault-name "cafe-dist-keyvault" --name "AZURE-SQL-CONNECTION-STRING" --value "<YOUR_CONNECTION_STRING>"
-   az keyvault secret set --vault-name "cafe-dist-keyvault" --name "AZURE-B2C-CLIENT-ID" --value "<YOUR_CLIENT_ID>"
-   az keyvault secret set --vault-name "cafe-dist-keyvault" --name "AZURE-B2C-CLIENT-SECRET" --value "<YOUR_CLIENT_SECRET>"
-   az keyvault secret set --vault-name "cafe-dist-keyvault" --name "AZURE-MAPS-KEY" --value "<YOUR_MAPS_KEY>"
-   ```
+- `DATABASE-URL`
+- `AZURE-MAPS-KEY`
 
-3. Grant Azure Functions managed identity access to Key Vault:
-   ```bash
-   az keyvault set-policy \
-     --name "cafe-dist-keyvault" \
-     --object-id "<FUNCTION_APP_MANAGED_IDENTITY_OBJECT_ID>" \
-     --secret-permissions get list
-   ```
+To add additional secrets:
+
+```bash
+az keyvault secret set --vault-name "kv<uniqueString>" --name "AZURE-B2C-CLIENT-ID" --value "<YOUR_CLIENT_ID>"
+az keyvault secret set --vault-name "kv<uniqueString>" --name "AZURE-B2C-CLIENT-SECRET" --value "<YOUR_CLIENT_SECRET>"
+```
+
+To grant Azure Functions access to Key Vault:
+
+```bash
+az keyvault set-policy \
+  --name "kv<uniqueString>" \
+  --object-id "<FUNCTION_APP_MANAGED_IDENTITY_OBJECT_ID>" \
+  --secret-permissions get list
+```
 
 ---
 
@@ -372,7 +368,7 @@ build/
 
 #### 1. CI Pipeline (`.github/workflows/ci.yml`)
 
-Triggers on every push and pull request to `main`:
+Triggers on every push and pull request to `main` and `develop`:
 
 ```yaml
 name: CI Pipeline
@@ -384,7 +380,6 @@ on:
     branches: [main]
 
 jobs:
-  # ─── API (Python / Azure Functions) ──────────────────────
   api-lint-and-test:
     runs-on: ubuntu-latest
     defaults:
@@ -412,7 +407,6 @@ jobs:
           name: api-security-reports
           path: api/*-report.json
 
-  # ─── Web (React / TypeScript) ────────────────────────────
   web-lint-and-test:
     runs-on: ubuntu-latest
     defaults:
@@ -435,7 +429,6 @@ jobs:
           name: web-coverage
           path: web/coverage/
 
-  # ─── Mobile (React Native) ───────────────────────────────
   mobile-lint-and-test:
     runs-on: ubuntu-latest
     defaults:
@@ -453,9 +446,9 @@ jobs:
       - run: npm run typecheck
 ```
 
-#### 2. CD Pipeline (`.github/workflows/cd.yml`)
+### 2. CD Pipeline (`.github/workflows/cd.yml`)
 
-Triggers on merge to `main`:
+Triggers on push to `main`:
 
 ```yaml
 name: CD Pipeline
@@ -466,13 +459,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-staging:
+  deploy-production:
     runs-on: ubuntu-latest
-    environment: staging
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
-      # ─── Build & Deploy API ────────────────────────────
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -480,41 +472,14 @@ jobs:
       - name: Deploy Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: cafe-dist-api-staging
+          app-name: cafe-dist-production-api
           package: api/
-          publish-profile: ${{ secrets.AZURE_FUNCTIONS_PUBLISH_PROFILE_STAGING }}
+          publish-profile: ${{ secrets.AZURE_FUNCTIONS_PUBLISH_PROFILE }}
 
-      # ─── Build & Deploy Web App ────────────────────────
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
       - run: cd web && npm ci && npm run build
-      - name: Deploy Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN_STAGING }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "web/dist"
-          api_location: "api"
-
-      # ─── Run Integration Tests ─────────────────────────
-      - name: Run integration tests
-        run: |
-          cd api && pytest tests/integration/ -v --base-url=${{ secrets.STAGING_URL }}
-
-  deploy-production:
-    needs: deploy-staging
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy Azure Functions
-        uses: Azure/functions-action@v1
-        with:
-          app-name: cafe-dist-api
-          package: api/
-          publish-profile: ${{ secrets.AZURE_FUNCTIONS_PUBLISH_PROFILE }}
       - name: Deploy Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
@@ -529,13 +494,14 @@ jobs:
 
 Configure these in **GitHub → Settings → Secrets and variables → Actions**:
 
-| Secret Name | Description |
-|-------------|-------------|
-| `AZURE_FUNCTIONS_PUBLISH_PROFILE` | Azure Functions publish profile (production) |
-| `AZURE_FUNCTIONS_PUBLISH_PROFILE_STAGING` | Azure Functions publish profile (staging) |
-| `AZURE_STATIC_WEB_APPS_TOKEN` | Static Web Apps deployment token (production) |
-| `AZURE_STATIC_WEB_APPS_TOKEN_STAGING` | Static Web Apps deployment token (staging) |
-| `STAGING_URL` | Staging environment URL for integration tests |
+| Secret Name | Description | How to Obtain |
+|-------------|-------------|---------------|
+| `AZURE_CREDENTIALS` | Service principal JSON | `az ad sp create-for-rbac` output |
+| `AZURE_RESOURCE_GROUP` | Resource group name | `coffee-distribution-rg` |
+| `POSTGRES_ADMIN_PASSWORD` | PostgreSQL admin password | Generated during setup |
+| `AZURE_MAPS_KEY` | Azure Maps primaryKey | `az maps account keys list` output |
+| `AZURE_FUNCTIONS_PUBLISH_PROFILE` | Functions publish profile (XML) | `az functionapp deployment list-publishing-profiles --xml` |
+| `AZURE_STATIC_WEB_APPS_TOKEN` | Static Web Apps deployment token | Azure Portal → Static Web App → Manage deployment token |
 
 ### Security Scanning in Pipeline
 
@@ -555,43 +521,54 @@ Configure these in **GitHub → Settings → Secrets and variables → Actions**
 
 ### Phase 1: Foundation (Weeks 1-3)
 
-| Task | Details |
-|------|---------|
-| Azure resource setup | Resource groups, Key Vault, managed identities |
-| Azure AD B2C configuration | Tenant, app registrations, user flows for admin/seller |
-| Azure SQL Database | Provision Basic tier, run schema migrations |
-| GitHub repo setup | Branch protection, secrets, CI/CD workflows |
-| Project scaffolding | Azure Functions (Python), React (Vite), React Native |
-| Authentication | Login/register/logout flows across web and mobile |
+| Task | Status | Details |
+|------|--------|---------|
+| Azure resource setup | ✅ Done | Bicep template deployed, Consumption plan (Y1) |
+| Azure Database for PostgreSQL | ✅ Done | Burstable tier deployed, `distribution` schema created |
+| Azure Key Vault | ✅ Done | Created via Bicep, secrets stored |
+| Azure Maps | ✅ Done | Gen2 account created |
+| GitHub repo setup | ✅ Done | CI/CD workflows created (`ci.yml`, `cd.yml`) |
+| GitHub Secrets | ✅ Done | All secrets configured |
+| Schema migrations | ✅ Done | DDLs created in DBeaver with `distribution` schema |
+| Project scaffolding | ✅ Done | API (Python), Web (React/Vite), Mobile (React Native) |
+| API functions (PostgreSQL) | ✅ Done | All 7 endpoints updated for PostgreSQL dialect |
+| Web app scaffolding | ✅ Done | Pages, components, hooks, services, auth config |
+| Mobile app scaffolding | ✅ Done | Screens, navigation setup |
+| Azure AD B2C configuration | ⬜ Pending | Tenant, app registrations, user flows |
+| Authentication | ⬜ Pending | Login/register/logout flows |
 
 ### Phase 2: Core Modules (Weeks 4-7)
 
-| Task | Details |
-|------|---------|
-| Inventory management | CRUD operations, low-stock alerts |
-| Sales tracking | Register sales, GPS coordinates, reports |
-| Complaint management | Submit, track, resolve complaints |
-| Admin dashboards | Sales overview, inventory health, complaint status |
+| Task | Status | Details |
+|------|--------|---------|
+| Inventory management | ✅ Done | CRUD operations (`/api/inventory`) |
+| Sales tracking | ✅ Done | Register sales, GPS coordinates (`/api/sales`) |
+| Complaint management | ✅ Done | Submit, track, resolve (`/api/complaints`) |
+| Routes & GPS | ✅ Done | Routes, waypoints, check-in, GPS tracking |
+| Reports | ✅ Done | Sales analytics (`/api/reports/sales`) |
+| Variants | ✅ Done | Coffee variants CRUD (`/api/variants`) |
+| Web app (React) | ✅ Done | Admin dashboard, seller views (scaffolded) |
+| Mobile app (React Native) | ✅ Done | Seller mobile interface (scaffolded) |
 
 ### Phase 3: Routes & GPS (Weeks 8-10)
 
-| Task | Details |
-|------|---------|
-| Route creation | Admin creates routes with waypoints |
-| Route assignment | Assign routes to sellers |
-| GPS tracking | Real-time location updates via Azure Maps |
-| Check-in system | Seller check-in/check-out at waypoints |
-| Route visualization | Map-based route display on admin dashboard |
+| Task | Status | Details |
+|------|--------|---------|
+| Route creation | ✅ Done | Admin creates routes with waypoints |
+| Route assignment | ✅ Done | Assign routes to sellers |
+| GPS tracking | ✅ Done | Real-time location updates |
+| Check-in system | ✅ Done | Seller check-in at waypoints |
+| Route visualization | ⬜ Pending | Map-based route display on admin dashboard |
 
 ### Phase 4: Polish & Deploy (Weeks 11-12)
 
-| Task | Details |
-|------|---------|
-| Mobile app polish | UI refinement, offline handling |
-| Integration testing | End-to-end tests against staging |
-| Performance testing | Load testing API endpoints |
-| Production deployment | Final deploy, monitoring, alerting setup |
-| Documentation | User guides, admin manual |
+| Task | Status | Details |
+|------|--------|---------|
+| Mobile app polish | ⬜ Pending | UI refinement, offline handling |
+| Integration testing | ⬜ Pending | End-to-end tests against staging |
+| Performance testing | ⬜ Pending | Load testing API endpoints |
+| Production deployment | ⬜ Pending | Final deploy, monitoring, alerting setup |
+| Documentation | ⬜ Pending | User guides, admin manual |
 
 ---
 
@@ -604,15 +581,28 @@ Configure these in **GitHub → Settings → Secrets and variables → Actions**
 - Azure Functions Core Tools v4
 - Azure CLI
 - Git
+- Docker (for local PostgreSQL)
 
 ### 1. Clone and Setup
 
 ```bash
 git clone <REPO_URL>
-cd SistenaDistribucion
+cd coffee_distribution_system
 ```
 
-### 2. API Setup
+### 2. Start Local PostgreSQL
+
+```bash
+docker run -d \
+  --name cafe-postgres \
+  -e POSTGRES_USER=cafeadmin \
+  -e POSTGRES_PASSWORD=localpassword \
+  -e POSTGRES_DB=cafe_distribution \
+  -p 5432:5432 \
+  postgres:16
+```
+
+### 3. API Setup
 
 ```bash
 cd api
@@ -630,7 +620,7 @@ Create `api/local.settings.json` (gitignored):
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "python",
-    "AZURE_SQL_CONNECTION_STRING": "Server=<server>.database.windows.net;Database=cafe-distribution;User Id=<user>;Password=<password>;Encrypt=True;",
+    "DATABASE_URL": "postgresql://cafeadmin:localpassword@localhost:5432/cafe_distribution",
     "AZURE_B2C_TENANT_NAME": "<YOUR_TENANT_NAME>",
     "AZURE_B2C_CLIENT_ID": "<YOUR_CLIENT_ID>",
     "AZURE_B2C_POLICY_NAME": "<YOUR_POLICY_NAME>",
@@ -645,7 +635,7 @@ Run API locally:
 func start
 ```
 
-### 3. Web App Setup
+### 4. Web App Setup
 
 ```bash
 cd web
@@ -662,7 +652,7 @@ VITE_AZURE_B2C_CLIENT_ID=<YOUR_CLIENT_ID>
 VITE_AZURE_B2C_POLICY_NAME=<YOUR_POLICY_NAME>
 ```
 
-### 4. Mobile App Setup
+### 5. Mobile App Setup
 
 ```bash
 cd mobile
@@ -692,6 +682,7 @@ AZURE_B2C_POLICY_NAME=<YOUR_POLICY_NAME>
 | Auth redirect fails | Verify redirect URI in Azure AD B2C matches your app URL + `/.auth/login/aadb2c/callback` |
 | GPS location not updating | Check mobile device location permissions and network connectivity |
 | SQL connection refused | Verify Azure SQL firewall rules allow your IP address |
+| Function App cold start | Consumption plan may take 1-2 seconds on first request - this is normal |
 
 ### Azure CLI Quick Reference
 
@@ -706,13 +697,28 @@ az account list -o table
 az account set --subscription "<SUBSCRIPTION_NAME>"
 
 # Create resource group
-az group create --name "cafe-dist-rg" --location "eastus"
+az group create --name "coffee-distribution-rg" --location "westus2"
 
-# Deploy infrastructure (when Bicep templates are ready)
+# Deploy infrastructure
 az deployment group create \
-  --resource-group "cafe-dist-rg  " \
+  --resource-group "coffee-distribution-rg" \
   --template-file infrastructure/main.bicep \
-  --parameters infrastructure/parameters.json
+  --parameters \
+    environmentName=production \
+    postgresAdminPassword="<YOUR_PASSWORD>" \
+    azureMapsKey="<YOUR_MAPS_KEY>"
+
+# Get Function App URL
+az functionapp show --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg" --query "defaultHostName" -o tsv
+
+# Get Static Web App URL
+az staticwebapp show --name "cafe-dist-production-web" --resource-group "coffee-distribution-rg" --query "defaultHostname" -o tsv
+
+# Stream Function App logs
+az functionapp log tail --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg"
+
+# Delete everything and start over
+az group delete --name "coffee-distribution-rg" --yes --no-wait
 ```
 
 ---

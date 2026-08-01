@@ -19,9 +19,9 @@ def update_location(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO GPSLocations (seller_id, latitude, longitude, accuracy)
-            VALUES (?, ?, ?, ?)
-        """, seller_id, body["latitude"], body["longitude"], body.get("accuracy"))
+            INSERT INTO distribution.gps_locations (seller_id, latitude, longitude, accuracy)
+            VALUES (%s, %s, %s, %s)
+        """, (seller_id, body["latitude"], body["longitude"], body.get("accuracy")))
         conn.commit()
 
         return func.HttpResponse(
@@ -48,11 +48,11 @@ def get_seller_locations(req: func.HttpRequest) -> func.HttpResponse:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT id, seller_id, latitude, longitude, accuracy, timestamp
-            FROM GPSLocations
-            WHERE seller_id = ?
+            FROM distribution.gps_locations
+            WHERE seller_id = %s
             ORDER BY timestamp DESC
-            OFFSET 0 ROWS FETCH NEXT 100 ROWS ONLY
-        """, seller_id)
+            LIMIT 100
+        """, (seller_id,))
         columns = [desc[0] for desc in cursor.description]
         locations = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
@@ -83,11 +83,12 @@ def get_seller_latest_location(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT TOP 1 id, seller_id, latitude, longitude, accuracy, timestamp
-            FROM GPSLocations
-            WHERE seller_id = ?
+            SELECT id, seller_id, latitude, longitude, accuracy, timestamp
+            FROM distribution.gps_locations
+            WHERE seller_id = %s
             ORDER BY timestamp DESC
-        """, seller_id)
+            LIMIT 1
+        """, (seller_id,))
         columns = [desc[0] for desc in cursor.description]
         row = cursor.fetchone()
 

@@ -21,19 +21,19 @@ def list_routes(req: func.HttpRequest) -> func.HttpResponse:
             cursor.execute("""
                 SELECT r.id, r.name, r.description, r.assigned_seller_id,
                        u.full_name as seller_name, r.status, r.route_date, r.created_at
-                FROM Routes r
-                LEFT JOIN Users u ON r.assigned_seller_id = u.id
+                FROM distribution.routes r
+                LEFT JOIN distribution.users u ON r.assigned_seller_id = u.id
                 ORDER BY r.route_date DESC
             """)
         else:
             cursor.execute("""
                 SELECT r.id, r.name, r.description, r.assigned_seller_id,
                        u.full_name as seller_name, r.status, r.route_date, r.created_at
-                FROM Routes r
-                LEFT JOIN Users u ON r.assigned_seller_id = u.id
-                WHERE r.assigned_seller_id = ?
+                FROM distribution.routes r
+                LEFT JOIN distribution.users u ON r.assigned_seller_id = u.id
+                WHERE r.assigned_seller_id = %s
                 ORDER BY r.route_date DESC
-            """, user.get("user_id"))
+            """, (user.get("user_id"),))
 
         columns = [desc[0] for desc in cursor.description]
         routes = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -67,24 +67,22 @@ def create_route(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Create route
         cursor.execute("""
-            INSERT INTO Routes (name, description, assigned_seller_id, route_date)
-            VALUES (?, ?, ?, ?)
-        """, body["name"], body.get("description"),
-           body.get("assigned_seller_id"), body["route_date"])
-        conn.commit()
-        route_id = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()[0]
+            INSERT INTO distribution.routes (name, description, assigned_seller_id, route_date)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        """, (body["name"], body.get("description"),
+              body.get("assigned_seller_id"), body["route_date"]))
+        route_id = cursor.fetchone()[0]
 
-        # Create waypoints
         waypoints = body.get("waypoints", [])
         for i, wp in enumerate(waypoints):
             cursor.execute("""
-                INSERT INTO RouteWaypoints (route_id, sequence, customer_name, address,
+                INSERT INTO distribution.route_waypoints (route_id, sequence, customer_name, address,
                                            latitude, longitude, estimated_arrival)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, route_id, i + 1, wp.get("customer_name"), wp.get("address"),
-                wp["latitude"], wp["longitude"], wp.get("estimated_arrival"))
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (route_id, i + 1, wp.get("customer_name"), wp.get("address"),
+                  wp["latitude"], wp["longitude"], wp.get("estimated_arrival")))
         conn.commit()
 
         return func.HttpResponse(
@@ -111,10 +109,10 @@ def assign_route(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            UPDATE Routes
-            SET assigned_seller_id = ?, status = 'pending'
-            WHERE id = ?
-        """, body["seller_id"], route_id)
+            UPDATE distribution.routes
+            SET assigned_seller_id = %s, status = 'pending'
+            WHERE id = %s
+        """, (body["seller_id"], route_id))
         conn.commit()
         if cursor.rowcount == 0:
             return func.HttpResponse(
@@ -147,8 +145,7 @@ def checkin_waypoint(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Verify seller owns this route
-        cursor.execute("SELECT assigned_seller_id FROM Routes WHERE id = ?", route_id)
+        cursor.execute("SELECT assigned_seller_id FROM distribution.routes WHERE id = %s", (route_id,))
         route = cursor.fetchone()
         if not route or route[0] != user.get("user_id"):
             return func.HttpResponse(
@@ -157,12 +154,11 @@ def checkin_waypoint(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
 
-        # Update waypoint status
         cursor.execute("""
-            UPDATE RouteWaypoints
-            SET status = 'visited', actual_arrival = SYSUTCDATETIME()
-            WHERE route_id = ? AND id = ?
-        """, route_id, body["waypoint_id"])
+            UPDATE distribution.route_waypoints
+            SET status = 'visited', actual_arrival = NOW()
+            WHERE route_id = %s AND id = %s
+        """, (route_id, body["waypoint_id"]))
         conn.commit()
 
         return func.HttpResponse(

@@ -15,45 +15,41 @@ def sales_report(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Total sales by seller
         cursor.execute("""
             SELECT u.full_name, COUNT(*) as total_sales, SUM(s.total_amount) as total_revenue
-            FROM Sales s
-            JOIN Users u ON s.seller_id = u.id
+            FROM distribution.sales s
+            JOIN distribution.users u ON s.seller_id = u.id
             GROUP BY u.full_name
             ORDER BY total_revenue DESC
         """)
         by_seller = [{"seller": row[0], "total_sales": row[1], "total_revenue": float(row[2])}
                      for row in cursor.fetchall()]
 
-        # Total sales by variant
         cursor.execute("""
             SELECT cv.name, cv.sku, SUM(s.quantity) as total_quantity,
                    SUM(s.total_amount) as total_revenue
-            FROM Sales s
-            JOIN CoffeeVariants cv ON s.variant_id = cv.id
+            FROM distribution.sales s
+            JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
             GROUP BY cv.name, cv.sku
             ORDER BY total_revenue DESC
         """)
         by_variant = [{"variant": row[0], "sku": row[1], "total_quantity": row[2],
                        "total_revenue": float(row[3])} for row in cursor.fetchall()]
 
-        # Sales by date (last 30 days)
         cursor.execute("""
-            SELECT CAST(s.sale_date AS DATE) as sale_day, COUNT(*) as total_sales,
-                   SUM(s.total_amount) as total_revenue
-            FROM Sales s
-            WHERE s.sale_date >= DATEADD(day, -30, SYSUTCDATETIME())
-            GROUP BY CAST(s.sale_date AS DATE)
+            SELECT sale_date::date as sale_day, COUNT(*) as total_sales,
+                   SUM(total_amount) as total_revenue
+            FROM distribution.sales
+            WHERE sale_date >= NOW() - INTERVAL '30 days'
+            GROUP BY sale_date::date
             ORDER BY sale_day DESC
         """)
         by_date = [{"date": row[0].isoformat() if row[0] else None, "total_sales": row[1],
                     "total_revenue": float(row[2])} for row in cursor.fetchall()]
 
-        # Overall totals
         cursor.execute("""
-            SELECT COUNT(*) as total_sales, ISNULL(SUM(total_amount), 0) as total_revenue
-            FROM Sales
+            SELECT COUNT(*) as total_sales, COALESCE(SUM(total_amount), 0) as total_revenue
+            FROM distribution.sales
         """)
         overall = cursor.fetchone()
         summary = {"total_sales": overall[0], "total_revenue": float(overall[1])}

@@ -16,7 +16,6 @@ def list_sales(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Check if admin or seller
         is_admin = user.get("role") == "admin"
 
         if is_admin:
@@ -26,9 +25,9 @@ def list_sales(req: func.HttpRequest) -> func.HttpResponse:
                        s.quantity, s.unit_price, s.total_amount,
                        s.customer_name, s.customer_address,
                        s.gps_latitude, s.gps_longitude, s.sale_date, s.notes
-                FROM Sales s
-                JOIN Users u ON s.seller_id = u.id
-                JOIN CoffeeVariants cv ON s.variant_id = cv.id
+                FROM distribution.sales s
+                JOIN distribution.users u ON s.seller_id = u.id
+                JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
                 ORDER BY s.sale_date DESC
             """)
         else:
@@ -38,12 +37,12 @@ def list_sales(req: func.HttpRequest) -> func.HttpResponse:
                        s.quantity, s.unit_price, s.total_amount,
                        s.customer_name, s.customer_address,
                        s.gps_latitude, s.gps_longitude, s.sale_date, s.notes
-                FROM Sales s
-                JOIN Users u ON s.seller_id = u.id
-                JOIN CoffeeVariants cv ON s.variant_id = cv.id
-                WHERE s.seller_id = ?
+                FROM distribution.sales s
+                JOIN distribution.users u ON s.seller_id = u.id
+                JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
+                WHERE s.seller_id = %s
                 ORDER BY s.sale_date DESC
-            """, user.get("user_id"))
+            """, (user.get("user_id"),))
 
         columns = [desc[0] for desc in cursor.description]
         sales = [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -80,8 +79,7 @@ def create_sale(req: func.HttpRequest) -> func.HttpResponse:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Get variant price
-        cursor.execute("SELECT price FROM CoffeeVariants WHERE id = ?", variant_id)
+        cursor.execute("SELECT price FROM distribution.coffee_variants WHERE id = %s", (variant_id,))
         variant = cursor.fetchone()
         if not variant:
             return func.HttpResponse(
@@ -94,14 +92,15 @@ def create_sale(req: func.HttpRequest) -> func.HttpResponse:
         total_amount = unit_price * quantity
 
         cursor.execute("""
-            INSERT INTO Sales (seller_id, variant_id, quantity, unit_price, total_amount,
+            INSERT INTO distribution.sales (seller_id, variant_id, quantity, unit_price, total_amount,
                              customer_name, customer_address, gps_latitude, gps_longitude, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, seller_id, variant_id, quantity, unit_price, total_amount,
-            body.get("customer_name"), body.get("customer_address"),
-            body.get("gps_latitude"), body.get("gps_longitude"), body.get("notes"))
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (seller_id, variant_id, quantity, unit_price, total_amount,
+              body.get("customer_name"), body.get("customer_address"),
+              body.get("gps_latitude"), body.get("gps_longitude"), body.get("notes")))
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        new_id = cursor.execute("SELECT SCOPE_IDENTITY()").fetchone()[0]
 
         return func.HttpResponse(
             json.dumps({"id": new_id, "total_amount": total_amount, "message": "Sale registered"}),
@@ -132,11 +131,11 @@ def get_sale(req: func.HttpRequest) -> func.HttpResponse:
                    s.quantity, s.unit_price, s.total_amount,
                    s.customer_name, s.customer_address,
                    s.gps_latitude, s.gps_longitude, s.sale_date, s.notes
-            FROM Sales s
-            JOIN Users u ON s.seller_id = u.id
-            JOIN CoffeeVariants cv ON s.variant_id = cv.id
-            WHERE s.id = ?
-        """, sale_id)
+            FROM distribution.sales s
+            JOIN distribution.users u ON s.seller_id = u.id
+            JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
+            WHERE s.id = %s
+        """, (sale_id,))
         columns = [desc[0] for desc in cursor.description]
         row = cursor.fetchone()
         if not row:
@@ -146,7 +145,6 @@ def get_sale(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
         sale = dict(zip(columns, row))
-        # Sellers can only see their own sales
         if user.get("role") != "admin" and sale["seller_id"] != user.get("user_id"):
             return func.HttpResponse(
                 json.dumps({"error": "Forbidden"}),
