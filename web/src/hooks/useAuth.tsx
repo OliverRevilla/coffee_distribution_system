@@ -19,24 +19,64 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+function getRoleFromClaims(claims: Record<string, unknown>): string {
+  // Microsoft Entra External ID custom claims
+  const extensionRole = claims['extension_role'] || claims['extension_<appid>_role']
+  if (extensionRole) {
+    return String(extensionRole).toLowerCase()
+  }
+  // Check for roles claim (app roles)
+  const roles = claims['roles'] || claims['role']
+  if (Array.isArray(roles)) {
+    return roles[0] || 'seller'
+  }
+  if (typeof roles === 'string') {
+    return roles.toLowerCase()
+  }
+  return 'seller' // Default role
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { instance, accounts } = useMsal()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (accounts.length > 0) {
-      const account = accounts[0]
-      // In a real app, you'd get role from B2C custom claims
-      setUser({
-        user_id: account.localAccountId,
-        email: account.username,
-        role: 'seller', // Default role, should come from B2C claims
-        name: account.name || '',
-      })
+    const loadUser = async () => {
+      if (accounts.length > 0) {
+        const account = accounts[0]
+        try {
+          // Get ID token to extract claims including custom role
+          const response = await instance.acquireTokenSilent({
+            scopes: loginRequest.scopes,
+            account: accounts[0],
+          })
+          
+          const idTokenClaims = response.idTokenClaims as Record<string, unknown>
+          const role = getRoleFromClaims(idTokenClaims)
+          
+          setUser({
+            user_id: account.localAccountId,
+            email: account.username,
+            role: role,
+            name: account.name || '',
+          })
+        } catch (error) {
+          console.error('Failed to get user claims:', error)
+          // Fallback to basic account info
+          setUser({
+            user_id: account.localAccountId,
+            email: account.username,
+            role: 'seller',
+            name: account.name || '',
+          })
+        }
+      }
+      setLoading(false)
     }
-    setLoading(false)
-  }, [accounts])
+    
+    loadUser()
+  }, [accounts, instance])
 
   const login = async () => {
     try {

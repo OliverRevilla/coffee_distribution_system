@@ -1,6 +1,35 @@
 import axios from 'axios'
+import { PublicClientApplication } from '@azure/msal-browser'
+import { msalConfig, apiScopes } from '../config/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7071/api'
+
+// MSAL instance for token acquisition
+let msalInstance: PublicClientApplication | null = null
+
+function getMsalInstance(): PublicClientApplication {
+  if (!msalInstance) {
+    msalInstance = new PublicClientApplication(msalConfig)
+  }
+  return msalInstance
+}
+
+async function getAccessToken(): Promise<string | null> {
+  try {
+    const instance = getMsalInstance()
+    const accounts = instance.getAllAccounts()
+    if (accounts.length === 0) return null
+
+    const response = await instance.acquireTokenSilent({
+      scopes: apiScopes,
+      account: accounts[0],
+    })
+    return response.accessToken
+  } catch (error) {
+    console.error('Failed to acquire token silently:', error)
+    return null
+  }
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -11,9 +40,7 @@ const api = axios.create({
 
 // Request interceptor to add auth token
 api.interceptors.request.use(async (config) => {
-  // This would integrate with MSAL to get the token
-  // For now, we'll use a placeholder
-  const token = localStorage.getItem('msal_access_token')
+  const token = await getAccessToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }

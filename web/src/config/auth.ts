@@ -1,13 +1,16 @@
 import { Configuration, LogLevel } from '@azure/msal-browser'
 
-const tenantName = import.meta.env.VITE_AZURE_B2C_TENANT_NAME || '<YOUR_TENANT_NAME>'
-const clientId = import.meta.env.VITE_AZURE_B2C_CLIENT_ID || '<YOUR_CLIENT_ID>'
-const policyName = import.meta.env.VITE_AZURE_B2C_POLICY_NAME || '<YOUR_POLICY_NAME>'
+const tenantName = import.meta.env.VITE_ENTRA_TENANT_NAME || '<YOUR_TENANT_NAME>'
+const clientId = import.meta.env.VITE_ENTRA_CLIENT_ID || '<YOUR_CLIENT_ID>'
+const policyName = import.meta.env.VITE_ENTRA_POLICY_NAME || '<YOUR_POLICY_NAME>'
+
+// Microsoft Entra External ID authority
+const authority = `https://${tenantName}.ciamlogin.com/${tenantName}.onmicrosoft.com`
 
 export const msalConfig: Configuration = {
   auth: {
     clientId: clientId,
-    authority: `https://${tenantName}.b2clogin.com/${tenantName}.onmicrosoft.com/${policyName}`,
+    authority: authority,
     redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin,
     navigateToLoginRequestUrl: true,
