@@ -34,7 +34,7 @@ export default function SalesZonesMap({ sales }: SalesZonesMapProps) {
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return
 
-    const map = L.map(mapRef.current).setView([-12.05, -77.03], 12)
+    const map: L.Map = L.map(mapRef.current).setView([-12.05, -77.03], 12)
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
@@ -42,7 +42,7 @@ export default function SalesZonesMap({ sales }: SalesZonesMapProps) {
 
     mapInstance.current = map
 
-    setTimeout(() => map.invalidateSize(), 0)
+    setTimeout(() => (map as any).invalidateSize(), 0)
 
     return () => {
       map.remove()

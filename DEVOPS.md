@@ -44,8 +44,6 @@ az login
 
 ## Step 2: Create Resource Group
 
-**Important:** Use `westus2` — it supports all resource types (Static Web Apps, SQL, Functions).
-
 ```bash
 az group create \
   --name "coffee-distribution-rg" \
@@ -105,12 +103,23 @@ az deployment group create \
   --parameters \
     environmentName=production \
     postgresAdminPassword="<YOUR_POSTGRES_PASSWORD>" \
-    azureMapsKey="<YOUR_AZURE_MAPS_KEY>"
+    azureMapsKey="<YOUR_AZURE_MAPS_KEY>" \
+    authSecretKey="$(openssl rand -hex 32)"
 ```
 
 ---
 
-## Step 7: Get App Service Publish Profile
+## Step 7: Apply Database Schema
+
+```bash
+export DATABASE_URL="postgresql://cafeadmin:<YOUR_PASSWORD>@cafedistproductionpg.postgres.database.azure.com:5432/cafe_distribution?sslmode=require"
+psql $DATABASE_URL -f infrastructure/schema.sql
+python seed_users.py
+```
+
+---
+
+## Step 8: Get App Service Publish Profile
 
 ```bash
 az webapp deployment list-publishing-profiles \
@@ -123,7 +132,7 @@ az webapp deployment list-publishing-profiles \
 
 ---
 
-## Step 8: Get Static Web App Token
+## Step 9: Get Static Web App Token
 
 1. Go to https://portal.azure.com
 2. Search for **cafe-dist-production-web**
@@ -132,28 +141,56 @@ az webapp deployment list-publishing-profiles \
 
 ---
 
-## Step 9: Configure GitHub Secrets
+## Step 10: Configure GitHub Secrets
 
-Go to **Settings → Secrets and variables → Actions → New repository secret**:
+Go to **GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret**
 
-| Secret Name | How to get it |
-|-------------|---------------|
-| `AZURE_CREDENTIALS` | Step 3 — entire JSON output |
-| `AZURE_RESOURCE_GROUP` | `coffee-distribution-rg` |
-| `POSTGRES_ADMIN_PASSWORD` | Step 4 — your password |
-| `AZURE_MAPS_KEY` | Step 5 — primaryKey |
-| `AZURE_PROD_PUBLISH_PROFILE` | Step 7 — entire XML |
-| `AZURE_PROD_STATIC_WEB_APPS_TOKEN` | Step 8 — token |
+### Required Secrets
+
+| Secret Name | Value | Where to get it |
+|-------------|-------|-----------------|
+| `AZURE_PROD_PUBLISH_PROFILE` | XML publish profile | Step 8 — `az webapp deployment list-publishing-profiles --xml` |
+| `AZURE_PROD_STATIC_WEB_APPS_TOKEN` | Deployment token | Step 9 — Azure Portal → Static Web App → Manage deployment tokens |
+
+### How to create a secret
+
+1. Click **New repository secret**
+2. Enter the **Name** exactly as shown above
+3. Paste the **Value**
+4. Click **Add secret**
 
 ---
 
-## Step 10: Push to GitHub
+## Step 11: Push to GitHub
 
 ```bash
 git add .
 git commit -m "Configure CI/CD pipeline"
 git push origin main
 ```
+
+The CD pipeline will automatically deploy to Azure.
+
+---
+
+## CI/CD Workflow
+
+### CI Pipeline (runs on every push)
+
+| Job | What it does |
+|-----|-------------|
+| `infrastructure-validate` | Validates Bicep template |
+| `api-lint-and-test` | Python lint (flake8), security scan (bandit), tests (pytest) |
+| `web-lint-and-test` | TypeScript type check, ESLint, vitest |
+| `mobile-lint-and-test` | TypeScript type check, ESLint |
+
+### CD Pipeline (runs on push to `main`)
+
+| Step | What it does |
+|------|-------------|
+| Deploy API | Deploys Flask app to Azure App Service |
+| Deploy Web | Builds and deploys React app to Static Web Apps |
+| Health Check | Verifies API is responding |
 
 ---
 
@@ -167,10 +204,6 @@ Old App Service Plan exists as Windows. Delete it:
 az appservice plan delete --name "cafe-dist-production-plan" --resource-group "coffee-distribution-rg" --yes
 ```
 
-### "VaultNameNotValid"
-
-Key Vault name must be 3-24 alphanumeric chars, no consecutive hyphens. Already fixed in template.
-
 ### "LocationNotAvailableForResourceType"
 
 Static Web Apps doesn't support `eastus`. Use `westus2` or `eastus2`.
@@ -182,12 +215,6 @@ Try a different region:
 ```bash
 az account list-locations --output table
 ```
-
-### App Service Plan Limitations
-
-- No VNET integration (not needed for this project)
-- Basic tier: 1.75 GB RAM, 10 GB storage
-- Max 10 minute request timeout
 
 ---
 

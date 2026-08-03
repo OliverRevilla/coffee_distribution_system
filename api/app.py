@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Flask API server for Cafe Distribution System."""
 
-import os
-import json
 import logging
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from datetime import datetime, timezone
+from flask import Flask, request, jsonify  # noqa: E402
+from flask_cors import CORS  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
 
-from shared.db import get_connection, close_connection
-from shared.auth import (
+from shared.db import get_connection, close_connection  # noqa: E402
+from shared.auth import (  # noqa: E402
     hash_password, verify_password, create_token, verify_token
 )
 
@@ -75,6 +74,7 @@ def get_current_user():
 
 def require_auth(f):
     from functools import wraps
+
     @wraps(f)
     def decorated(*args, **kwargs):
         user = get_current_user()
@@ -87,6 +87,7 @@ def require_auth(f):
 
 def require_admin(f):
     from functools import wraps
+
     @wraps(f)
     def decorated(*args, **kwargs):
         user = get_current_user()

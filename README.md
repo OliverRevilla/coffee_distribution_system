@@ -375,8 +375,8 @@ All endpoints are served via Flask (Python) on port 7071.
 ### Prerequisites
 
 - Python 3.11+
-- Node.js 18+
-- PostgreSQL database
+- Node.js 20+
+- Docker (for PostgreSQL)
 
 ### 1. Clone and Setup
 
@@ -385,75 +385,65 @@ git clone <REPO_URL>
 cd coffee_distribution_system
 ```
 
-### 2. API Setup
+### 2. Start PostgreSQL with Docker
+
+```bash
+docker run -d \
+  --name cafe-postgres \
+  -e POSTGRES_USER=cafeadmin \
+  -e POSTGRES_PASSWORD=localdev123 \
+  -e POSTGRES_DB=cafe_distribution \
+  -p 5432:5432 \
+  postgres:16
+```
+
+### 3. Apply Schema
+
+```bash
+export DATABASE_URL="postgresql://cafeadmin:localdev123@localhost:5432/cafe_distribution"
+psql $DATABASE_URL -f infrastructure/schema.sql
+```
+
+### 4. Seed Test Data
+
+```bash
+python seed_users.py
+python seed_data.py
+```
+
+### 5. Start API
 
 ```bash
 cd api
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
 pip install -r requirements.txt
+export DATABASE_URL="postgresql://cafeadmin:localdev123@localhost:5432/cafe_distribution"
+export AUTH_SECRET_KEY="my-local-dev-key"
+python app.py
 ```
 
-### 3. Database Setup
+API runs at `http://localhost:7071`
 
-Create database and schema:
-
-```bash
-psql -U your_user -d your_database -f infrastructure/schema.sql
-```
-
-If you have an existing database, add the category column:
-
-```sql
-ALTER TABLE distribution.coffee_variants ADD COLUMN category VARCHAR(1) NOT NULL DEFAULT 'C';
-```
-
-### 4. Configure Environment
-
-Set your database connection:
+### 6. Start Frontend
 
 ```bash
 export DATABASE_URL="postgresql://cafeadmin:YOUR_PASSWORD@YOUR_HOST:5432/cafe_distribution"
 ```
 
-### 5. Seed Test Data
+Frontend runs at `http://localhost:5173`
+
+### 7. Login
+
+- **Seller**: `http://localhost:5173/login/seller`
+  - Email: `seller@test.com` / Password: `seller123`
+- **Admin**: `http://localhost:5173/login/admin`
+  - Email: `admin@test.com` / Password: `admin123`
+
+### 8. Stop PostgreSQL
 
 ```bash
-# Create admin and test seller users
-python seed_users.py
-
-# Create test data (variants, inventory, sales, routes, complaints)
-python seed_data.py
+docker stop cafe-postgres
+docker rm cafe-postgres
 ```
-
-### 6. Start API Server
-
-```bash
-cd api
-python app.py
-```
-
-API runs on `http://localhost:7071`
-
-### 7. Start Frontend
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Frontend runs on `http://localhost:5173`
-
-### 8. Login
-
-- **Seller**: Go to `http://localhost:5173/login/seller`
-  - Email: `seller@test.com`
-  - Password: `seller123`
-- **Admin**: Go to `http://localhost:5173/login/admin`
-  - Email: `admin@test.com`
-  - Password: `admin123`
 
 ---
 
@@ -555,6 +545,39 @@ python seed_users.py && python seed_data.py
 # Type check frontend
 cd web && npm run typecheck
 ```
+
+### Frontend Routes
+
+| URL | Page | Access |
+|-----|------|--------|
+| `/login` | Landing page (choose role) | Public |
+| `/login/seller` | Seller login | Public |
+| `/login/admin` | Admin login | Public |
+| `/register/seller` | Seller registration | Public |
+| `/dashboard` | Seller dashboard | Seller |
+| `/admin` | Admin dashboard | Admin |
+| `/admin/inventory` | Inventory management | Admin |
+| `/admin/sales` | Sales list | Admin |
+| `/admin/routes` | Routes management | Admin |
+| `/admin/complaints` | Complaints management | Admin |
+| `/admin/sellers` | Seller management | Admin |
+
+---
+
+## GitHub Actions Secrets
+
+Only **2 secrets** are needed for CD deployment:
+
+| Secret Name | How to get it |
+|-------------|---------------|
+| `AZURE_PROD_PUBLISH_PROFILE` | `az webapp deployment list-publishing-profiles --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg" --xml` |
+| `AZURE_PROD_STATIC_WEB_APPS_TOKEN` | Azure Portal → Static Web App → Manage deployment tokens |
+
+### Where to configure
+
+GitHub → Repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+
+See [DEVOPS.md](DEVOPS.md) for full deployment instructions.
 
 ### Frontend Routes
 

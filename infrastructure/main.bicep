@@ -15,6 +15,10 @@ param postgresAdminLogin string = 'cafeadmin'
 @secure()
 param azureMapsKey string
 
+@description('Auth secret key for token signing')
+@secure()
+param authSecretKey string
+
 var postgresServerName = 'cafedist${environmentName}pg'
 var postgresDatabaseName = 'cafe_distribution'
 var keyVaultName = 'kv${uniqueString(resourceGroup().id)}'
@@ -24,7 +28,7 @@ var staticWebAppName = 'cafe-dist-${environmentName}-web'
 var storageAccountName = 'cafedist${environmentName}stor'
 var appInsightsName = 'cafe-dist-${environmentName}-insights'
 var postgresSkuName = 'Standard_B1ms'
-var postgresStorageGB = 16
+var postgresStorageGB = 32
 
 // ─── Storage Account ───────────────────────────────────────────
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
@@ -151,7 +155,7 @@ resource keyVaultSecretMapsKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = 
 resource keyVaultSecretAuthKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
   parent: keyVault
   name: 'AUTH-SECRET-KEY'
-  properties: { value: newGuid() }
+  properties: { value: authSecretKey }
 }
 
 // ─── Outputs ────────────────────────────────────────────────────
