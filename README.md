@@ -426,9 +426,7 @@ API runs at `http://localhost:7071`
 ### 6. Start Frontend
 
 ```bash
-cd web
-npm install
-npm run dev
+export DATABASE_URL="postgresql://cafeadmin:YOUR_PASSWORD@YOUR_HOST:5432/cafe_distribution"
 ```
 
 Frontend runs at `http://localhost:5173`
@@ -547,6 +545,22 @@ python seed_users.py && python seed_data.py
 # Type check frontend
 cd web && npm run typecheck
 ```
+
+### Frontend Routes
+
+| URL | Page | Access |
+|-----|------|--------|
+| `/login` | Landing page (choose role) | Public |
+| `/login/seller` | Seller login | Public |
+| `/login/admin` | Admin login | Public |
+| `/register/seller` | Seller registration | Public |
+| `/dashboard` | Seller dashboard | Seller |
+| `/admin` | Admin dashboard | Admin |
+| `/admin/inventory` | Inventory management | Admin |
+| `/admin/sales` | Sales list | Admin |
+| `/admin/routes` | Routes management | Admin |
+| `/admin/complaints` | Complaints management | Admin |
+| `/admin/sellers` | Seller management | Admin |
 
 ---
 
