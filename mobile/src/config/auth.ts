@@ -1,4 +1,4 @@
-import { Configuration } from '@azure/msal-react-native'
+import { Configuration } from '@azure/msal-browser'
 
 const tenantName = process.env.ENTRA_TENANT_NAME || '<YOUR_TENANT_NAME>'
 const clientId = process.env.ENTRA_CLIENT_ID || '<YOUR_CLIENT_ID>'
