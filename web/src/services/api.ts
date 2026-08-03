@@ -9,24 +9,23 @@ const api = axios.create({
   },
 })
 
-// Request interceptor to add auth token
-api.interceptors.request.use(async (config) => {
-  // This would integrate with MSAL to get the token
-  // For now, we'll use a placeholder
-  const token = localStorage.getItem('msal_access_token')
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
 
-// Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Redirect to login
-      window.location.href = '/login'
+      const storedUser = localStorage.getItem('auth_user')
+      const role = storedUser ? JSON.parse(storedUser).role : null
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_user')
+      window.location.href = role === 'admin' ? '/login/admin' : '/login/seller'
     }
     return Promise.reject(error)
   }
@@ -34,7 +33,6 @@ api.interceptors.response.use(
 
 export default api
 
-// API functions
 export const inventoryApi = {
   list: () => api.get('/inventory'),
   get: (id: number) => api.get(`/inventory/${id}`),
@@ -82,4 +80,9 @@ export const trackingApi = {
 
 export const reportsApi = {
   getSalesReport: () => api.get('/reports/sales'),
+}
+
+export const authApi = {
+  register: (data: { email: string; password: string; full_name: string; role: string }) =>
+    api.post('/auth/register', data),
 }

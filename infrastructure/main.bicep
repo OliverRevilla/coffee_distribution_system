@@ -1,39 +1,53 @@
 @description('Azure region for all resources')
 param location string = resourceGroup().location
 
-@description('Environment name (staging or production)')
-param environmentName string = 'staging'
+@description('Environment name')
+param environmentName string = 'production'
 
-@description('SQL Admin password')
+@description('PostgreSQL Admin password')
 @secure()
-param sqlAdminPassword string
+param postgresAdminPassword string
 
-@description('SQL Admin login')
-param sqlAdminLogin string = 'cafeadmin'
-
-@description('B2C Tenant Name')
-param b2cTenantName string
-
-@description('B2C Client ID')
-param b2cClientId string
-
-@description('B2C Client Secret')
-@secure()
-param b2cClientSecret string
-
-@description('B2C Policy Name')
-param b2cPolicyName string
+@description('PostgreSQL Admin login')
+param postgresAdminLogin string = 'cafeadmin'
 
 @description('Azure Maps Key')
 @secure()
 param azureMapsKey string
 
-// ─── Resource Names ─────────────────────────────────────────────
-var sqlServerName = 'cafedist${environmentName}sql'
-var sqlDatabaseName = 'cafe-distribution'
-var keyVaultName = 'cafe-dist-${environmentName}-kv'
-var functionAppName = 'cafe-dist-${environmentName}-api'
+var postgresServerName = 'cafedist${environmentName}pg'
+var postgresDatabaseName = 'cafe_distribution'
+var keyVaultName = 'kv${uniqueString(resourceGroup().id)}'
+var appServicePlanName = 'cafe-dist-${environmentName}-plan'
+var webAppName = 'cafe-dist-${environmentName}-api'
 var staticWebAppName = 'cafe-dist-${environmentName}-web'
+var storageAccountName = 'cafedist${environmentName}stor'
+var appInsightsName = 'cafe-dist-${environmentName}-insights'
+var postgresSkuName = 'Standard_B1ms'
+var postgresStorageGB = 16
+
+// ─── Storage Account ───────────────────────────────────────────
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  name: storageAccountName
+  location: location
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2'
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+  }
+}
+
+// ─── Application Insights ──────────────────────────────────────
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: appInsightsName
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: null
+  }
+}
 
 // ─── Key Vault ──────────────────────────────────────────────────
 resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
@@ -50,69 +64,64 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
   }
 }
 
-// ─── SQL Server ─────────────────────────────────────────────────
-resource sqlServer 'Microsoft.Sql/servers@2022-05-01-preview' = {
-  name: sqlServerName
+// ─── Azure Database for PostgreSQL ─────────────────────────────
+resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
+  name: postgresServerName
   location: location
+  sku: { name: postgresSkuName, tier: 'Burstable' }
   properties: {
-    administratorLogin: sqlAdminLogin
-    administratorLoginPassword: sqlAdminPassword
-    version: '12.0'
-    minimalTlsVersion: '1.2'
+    version: '16'
+    administratorLogin: postgresAdminLogin
+    administratorLoginPassword: postgresAdminPassword
+    storage: { storageSizeGB: postgresStorageGB }
+    backup: { backupRetentionDays: 7, geoRedundantBackup: 'Disabled' }
+    highAvailability: { mode: 'Disabled' }
   }
 }
 
-resource sqlDatabase 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
-  parent: sqlServer
-  name: sqlDatabaseName
-  location: location
-  sku: { name: 'Basic', tier: 'Basic', capacity: 5 }
+resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-01' = {
+  parent: postgresServer
+  name: postgresDatabaseName
 }
 
-// Allow Azure services
-resource sqlFirewallAzure 'Microsoft.Sql/servers/firewallRules@2022-05-01-preview' = {
-  parent: sqlServer
-  name: 'AllowAzureServices'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
-  }
-}
-
-// ─── App Service Plan (Consumption) ─────────────────────────────
+// ─── App Service Plan (Linux) ──────────────────────────────────
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
-  name: 'cafe-dist-${environmentName}-plan'
+  name: appServicePlanName
   location: location
-  sku: { name: 'Y1', tier: 'Dynamic' }
-  reserved: true
+  kind: 'linux'
+  sku: { name: 'B1', tier: 'Basic' }
+  properties: {
+    reserved: true
+  }
 }
 
-// ─── Function App ───────────────────────────────────────────────
-resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
-  name: functionAppName
+// ─── Flask API (App Service) ───────────────────────────────────
+resource webApp 'Microsoft.Web/sites@2022-09-01' = {
+  name: webAppName
   location: location
-  kind: 'functionapp,linux'
+  kind: 'app,linux'
   identity: { type: 'SystemAssigned' }
   properties: {
     serverFarmId: appServicePlan.id
+    httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'Python|3.11'
+      appCommandLine: 'gunicorn --bind=0.0.0.0 --timeout 600 app:app'
       appSettings: [
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${keyVaultName};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(keyVault.id, '2023-02-01').keys[0].value}' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'AZURE_SQL_CONNECTION_STRING', value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;' }
-        { name: 'AZURE_B2C_TENANT_NAME', value: b2cTenantName }
-        { name: 'AZURE_B2C_CLIENT_ID', value: b2cClientId }
-        { name: 'AZURE_B2C_CLIENT_SECRET', value: b2cClientSecret }
-        { name: 'AZURE_B2C_POLICY_NAME', value: b2cPolicyName }
+        { name: 'DATABASE_URL', value: 'postgresql://${postgresAdminLogin}:${postgresAdminPassword}@${postgresServer.properties.fullyQualifiedDomainName}:5432/${postgresDatabaseName}?sslmode=require' }
+        { name: 'AUTH_SECRET_KEY', value: '${keyVault.properties.vaultUri}secrets/AUTH-SECRET-KEY' }
         { name: 'AZURE_MAPS_KEY', value: azureMapsKey }
+        { name: 'APPINSIGHTS_INSTRUMENTATIONKEY', value: appInsights.properties.InstrumentationKey }
+        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
+        { name: 'ENABLE_ORYX_BUILD_SYSTEM', value: 'true' }
       ]
       cors: {
-        allowedOrigins: ['*']
+        allowedOrigins: [
+          'https://${staticWebAppName}.azurestaticapps.net'
+          'http://localhost:5173'
+        ]
       }
     }
-    httpsOnly: true
   }
 }
 
@@ -125,24 +134,12 @@ resource staticWebApp 'Microsoft.Web/staticSites@2022-09-01' = {
 }
 
 // ─── Key Vault Secrets ──────────────────────────────────────────
-resource keyVaultSecretSql 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
+resource keyVaultSecretDb 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
   parent: keyVault
-  name: 'AZURE-SQL-CONNECTION-STRING'
+  name: 'DATABASE-URL'
   properties: {
-    value: 'Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=${sqlAdminLogin};Password=${sqlAdminPassword};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+    value: 'postgresql://${postgresAdminLogin}:${postgresAdminPassword}@${postgresServer.properties.fullyQualifiedDomainName}:5432/${postgresDatabaseName}?sslmode=require'
   }
-}
-
-resource keyVaultSecretB2CClientId 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
-  parent: keyVault
-  name: 'AZURE-B2C-CLIENT-ID'
-  properties: { value: b2cClientId }
-}
-
-resource keyVaultSecretB2CClientSecret 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
-  parent: keyVault
-  name: 'AZURE-B2C-CLIENT-SECRET'
-  properties: { value: b2cClientSecret }
 }
 
 resource keyVaultSecretMapsKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
@@ -151,9 +148,17 @@ resource keyVaultSecretMapsKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = 
   properties: { value: azureMapsKey }
 }
 
+resource keyVaultSecretAuthKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
+  parent: keyVault
+  name: 'AUTH-SECRET-KEY'
+  properties: { value: newGuid() }
+}
+
 // ─── Outputs ────────────────────────────────────────────────────
-output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
-output functionAppName string = functionApp.name
+output postgresServerFqdn string = postgresServer.properties.fullyQualifiedDomainName
+output webAppName string = webApp.name
 output staticWebAppName string = staticWebApp.name
 output keyVaultName string = keyVault.name
+output storageAccountName string = storageAccount.name
 output resourceGroupName string = resourceGroup().name
+output appInsightsName string = appInsights.name

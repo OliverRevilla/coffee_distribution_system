@@ -71,10 +71,10 @@ export default function SalesPage() {
                   {sale.quantity}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  ${sale.unit_price?.toFixed(2)}
+                  ${Number(sale.unit_price || 0).toFixed(2)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  ${sale.total_amount?.toFixed(2)}
+                  ${Number(sale.total_amount || 0).toFixed(2)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {sale.customer_name || '-'}

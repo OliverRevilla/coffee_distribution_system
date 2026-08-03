@@ -1,25 +1,20 @@
 import os
-import pyodbc
+import psycopg2
 from typing import Optional
 
 
-_connection: Optional[pyodbc.Connection] = None
+def get_connection():
+    """Create a new database connection each time."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise ValueError("DATABASE_URL not configured")
+    return psycopg2.connect(database_url)
 
 
-def get_connection() -> pyodbc.Connection:
-    """Get or create a database connection singleton."""
-    global _connection
-    if _connection is None or _connection.closed:
-        conn_str = os.environ.get("AZURE_SQL_CONNECTION_STRING")
-        if not conn_str:
-            raise ValueError("AZURE_SQL_CONNECTION_STRING not configured")
-        _connection = pyodbc.connect(conn_str)
-    return _connection
-
-
-def close_connection():
-    """Close the database connection."""
-    global _connection
-    if _connection and not _connection.closed:
-        _connection.close()
-        _connection = None
+def close_connection(conn: Optional[psycopg2.extensions.connection] = None):
+    """Close a database connection if open."""
+    if conn and not conn.closed:
+        try:
+            conn.close()
+        except Exception:
+            pass

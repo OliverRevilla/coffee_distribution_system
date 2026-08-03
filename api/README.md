@@ -1,14 +1,12 @@
 # Coffee Distribution API
 
-Azure Functions (Python) backend for the Coffee Distribution System.
+Flask REST API backend for the Coffee Distribution System.
 
 ## Local Development
 
 ### Prerequisites
 
 - Python 3.11+
-- Azure Functions Core Tools v4
-- Azure CLI
 
 ### Setup
 
@@ -16,7 +14,6 @@ Azure Functions (Python) backend for the Coffee Distribution System.
    ```bash
    python -m venv venv
    source venv/bin/activate  # Linux/Mac
-   # venv\Scripts\activate   # Windows
    ```
 
 2. Install dependencies:
@@ -24,24 +21,31 @@ Azure Functions (Python) backend for the Coffee Distribution System.
    pip install -r requirements.txt
    ```
 
-3. Copy the example settings:
+3. Set environment variables:
    ```bash
-   cp local.settings.example.json local.settings.json
+   export DATABASE_URL="postgresql://cafeadmin:<password>@localhost:5432/cafe_distribution"
+   export AUTH_SECRET_KEY="<your-secret-key>"
    ```
 
-4. Update `local.settings.json` with your Azure credentials.
-
-5. Start the API:
+4. Start the API:
    ```bash
-   func start
+   python app.py
+   ```
+
+   Or with Gunicorn (production-like):
+   ```bash
+   gunicorn --bind=0.0.0.0 --timeout 600 app:app
    ```
 
 ### API Endpoints
 
+- `GET /api/health` - Health check
+- `POST /api/auth/login` - Login
+- `POST /api/auth/register/seller` - Seller self-registration
+- `POST /api/auth/register` - Admin user creation
+- `GET /api/sellers` - List sellers (admin)
 - `GET /api/inventory` - List inventory (admin)
-- `POST /api/inventory` - Create inventory item (admin)
 - `GET /api/variants` - List coffee variants
-- `POST /api/variants` - Create variant (admin)
 - `GET /api/sales` - List sales
 - `POST /api/sales` - Create sale
 - `GET /api/routes` - List routes
@@ -49,6 +53,7 @@ Azure Functions (Python) backend for the Coffee Distribution System.
 - `POST /api/tracking/location` - Update GPS location
 - `GET /api/complaints` - List complaints
 - `POST /api/complaints` - Create complaint
+- `GET /api/reports/sales` - Sales report (admin)
 
 ### Testing
 

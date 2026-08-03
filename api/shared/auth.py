@@ -1,101 +1,70 @@
 import os
 import json
 import logging
-import requests
+import uuid
+import hashlib
+import hmac
+import time
+import base64
+import secrets
 from functools import wraps
 from typing import Optional
-import azure.functions as func
 
 
 logger = logging.getLogger(__name__)
 
-B2C_TENANT = os.environ.get("AZURE_B2C_TENANT_NAME", "")
-B2C_POLICY = os.environ.get("AZURE_B2C_POLICY_NAME", "")
-B2C_CLIENT_ID = os.environ.get("AZURE_B2C_CLIENT_ID", "")
-JWKS_URL = f"https://{B2C_TENANT}.b2clogin.com/{B2C_TENANT}.onmicrosoft.com/{B2C_POLICY}/discovery/v2.0/keys"
-
-_jwks_cache: Optional[dict] = None
+_SECRET_KEY = os.environ.get("AUTH_SECRET_KEY")
+if not _SECRET_KEY:
+    logger.warning("AUTH_SECRET_KEY not set — using insecure dev key. Do NOT use in production.")
+    _SECRET_KEY = "dev-secret-change-in-production"
 
 
-def _get_jwks() -> dict:
-    """Fetch and cache JWKS from Azure AD B2C."""
-    global _jwks_cache
-    if _jwks_cache is None:
-        try:
-            resp = requests.get(JWKS_URL, timeout=10)
-            resp.raise_for_status()
-            _jwks_cache = resp.json()
-        except Exception as e:
-            logger.error(f"Failed to fetch JWKS: {e}")
-            _jwks_cache = {}
-    return _jwks_cache
+def hash_password(password: str) -> str:
+    """Hash a password using PBKDF2-SHA256 with a random salt."""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+    return f"{salt}${dk.hex()}"
 
 
-def get_user_from_request(req: func.HttpRequest) -> Optional[dict]:
-    """
-    Extract user claims from the request.
-    Returns dict with user_id, email, role or None if not authenticated.
-    """
-    auth_header = req.headers.get("x-ms-client-principal")
-    if not auth_header:
-        auth_header = req.headers.get("Authorization", "")
-
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verify a password against a stored PBKDF2-SHA256 hash."""
     try:
-        # Azure Static Web Apps passes user info via header
-        if "x-ms-client-principal" in req.headers:
-            import base64
-            decoded = base64.b64decode(req.headers["x-ms-client-principal"]).decode("utf-8")
-            principal = json.loads(decoded)
-            user_claims = {}
-            for claim in principal.get("userRoles", []):
-                pass
-            for claim in principal.get("claims", []):
-                user_claims[claim["typ"]] = claim["val"]
-            return {
-                "user_id": user_claims.get("oid", ""),
-                "email": user_claims.get("emails", user_claims.get("email", "")),
-                "role": user_claims.get("extension_role", "seller"),
-                "name": user_claims.get("name", "")
-            }
-    except Exception as e:
-        logger.warning(f"Could not parse principal header: {e}")
-
-    return None
+        salt, expected_hex = stored_hash.split("$", 1)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+        return hmac.compare_digest(dk.hex(), expected_hex)
+    except Exception:
+        return False
 
 
-def require_auth(func):
-    """Decorator to require authentication on Azure Functions."""
-    @wraps(func)
-    def wrapper(req: func.HttpRequest) -> func.HttpResponse:
-        user = get_user_from_request(req)
-        if not user:
-            return func.HttpResponse(
-                json.dumps({"error": "Unauthorized"}),
-                status_code=401,
-                mimetype="application/json"
-            )
-        req.route_data["user"] = user
-        return func(req)
-    return wrapper
+def create_token(user_id: int, email: str, role: str, name: str) -> str:
+    """Create a simple HMAC-signed token."""
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "name": name,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 86400,
+        "jti": str(uuid.uuid4())
+    }
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    sig = hashlib.sha256(f"{payload_b64}.{_SECRET_KEY}".encode()).hexdigest()
+    return f"{payload_b64}.{sig}"
 
 
-def require_admin(func):
-    """Decorator to require admin role."""
-    @wraps(func)
-    def wrapper(req: func.HttpRequest) -> func.HttpResponse:
-        user = get_user_from_request(req)
-        if not user:
-            return func.HttpResponse(
-                json.dumps({"error": "Unauthorized"}),
-                status_code=401,
-                mimetype="application/json"
-            )
-        if user.get("role") != "admin":
-            return func.HttpResponse(
-                json.dumps({"error": "Forbidden: admin role required"}),
-                status_code=403,
-                mimetype="application/json"
-            )
-        req.route_data["user"] = user
-        return func(req)
-    return wrapper
+def verify_token(token: str) -> Optional[dict]:
+    """Verify and decode a token. Returns None if invalid."""
+    try:
+        parts = token.split(".")
+        if len(parts) != 2:
+            return None
+        payload_b64, sig = parts
+        expected_sig = hashlib.sha256(f"{payload_b64}.{_SECRET_KEY}".encode()).hexdigest()
+        if sig != expected_sig:
+            return None
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + "=="))
+        if payload.get("exp", 0) < time.time():
+            return None
+        return payload
+    except Exception:
+        return None

@@ -1,9 +1,16 @@
+import { useEffect } from 'react'
 import { Outlet, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
 export default function Layout() {
   const { user, logout, loading } = useAuth()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/login')
+    }
+  }, [user, loading, navigate])
 
   if (loading) {
     return (
@@ -14,7 +21,6 @@ export default function Layout() {
   }
 
   if (!user) {
-    navigate('/login')
     return null
   }
 
