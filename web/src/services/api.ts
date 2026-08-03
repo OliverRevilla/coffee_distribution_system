@@ -1,35 +1,6 @@
 import axios from 'axios'
-import { PublicClientApplication } from '@azure/msal-browser'
-import { msalConfig, apiScopes } from '../config/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7071/api'
-
-// MSAL instance for token acquisition
-let msalInstance: PublicClientApplication | null = null
-
-function getMsalInstance(): PublicClientApplication {
-  if (!msalInstance) {
-    msalInstance = new PublicClientApplication(msalConfig)
-  }
-  return msalInstance
-}
-
-async function getAccessToken(): Promise<string | null> {
-  try {
-    const instance = getMsalInstance()
-    const accounts = instance.getAllAccounts()
-    if (accounts.length === 0) return null
-
-    const response = await instance.acquireTokenSilent({
-      scopes: apiScopes,
-      account: accounts[0],
-    })
-    return response.accessToken
-  } catch (error) {
-    console.error('Failed to acquire token silently:', error)
-    return null
-  }
-}
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -38,21 +9,20 @@ const api = axios.create({
   },
 })
 
-// Request interceptor to add auth token
-api.interceptors.request.use(async (config) => {
-  const token = await getAccessToken()
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
 
-// Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Redirect to login
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_user')
       window.location.href = '/login'
     }
     return Promise.reject(error)
@@ -61,7 +31,6 @@ api.interceptors.response.use(
 
 export default api
 
-// API functions
 export const inventoryApi = {
   list: () => api.get('/inventory'),
   get: (id: number) => api.get(`/inventory/${id}`),

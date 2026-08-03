@@ -1,14 +1,14 @@
 -- Create custom schema
 CREATE SCHEMA IF NOT EXISTS distribution;
 
--- Users table (synced from Azure AD B2C)
+-- Users table
 CREATE TABLE distribution.users (
     id              SERIAL PRIMARY KEY,
     email           VARCHAR(256) NOT NULL UNIQUE,
     full_name       VARCHAR(256) NOT NULL,
     role            VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'seller')),
     status          VARCHAR(20) NOT NULL DEFAULT 'active',
-    azure_b2c_id    VARCHAR(256) NOT NULL UNIQUE,
+    azure_b2c_id    VARCHAR(256),
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

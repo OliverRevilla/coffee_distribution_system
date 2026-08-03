@@ -1,7 +1,10 @@
 import os
 import json
 import logging
-import requests
+import uuid
+import hashlib
+import time
+import base64
 from functools import wraps
 from typing import Optional
 import azure.functions as func
@@ -9,58 +12,63 @@ import azure.functions as func
 
 logger = logging.getLogger(__name__)
 
-B2C_TENANT = os.environ.get("AZURE_B2C_TENANT_NAME", "")
-B2C_POLICY = os.environ.get("AZURE_B2C_POLICY_NAME", "")
-B2C_CLIENT_ID = os.environ.get("AZURE_B2C_CLIENT_ID", "")
-JWKS_URL = f"https://{B2C_TENANT}.b2clogin.com/{B2C_TENANT}.onmicrosoft.com/{B2C_POLICY}/discovery/v2.0/keys"
-
-_jwks_cache: Optional[dict] = None
+_SECRET_KEY = os.environ.get("AUTH_SECRET_KEY", "dev-secret-change-in-production")
 
 
-def _get_jwks() -> dict:
-    """Fetch and cache JWKS from Azure AD B2C."""
-    global _jwks_cache
-    if _jwks_cache is None:
-        try:
-            resp = requests.get(JWKS_URL, timeout=10)
-            resp.raise_for_status()
-            _jwks_cache = resp.json()
-        except Exception as e:
-            logger.error(f"Failed to fetch JWKS: {e}")
-            _jwks_cache = {}
-    return _jwks_cache
+def create_token(user_id: int, email: str, role: str, name: str) -> str:
+    """Create a simple HMAC-signed token."""
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "name": name,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 86400,
+        "jti": str(uuid.uuid4())
+    }
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    sig = hashlib.sha256(f"{payload_b64}.{_SECRET_KEY}".encode()).hexdigest()
+    return f"{payload_b64}.{sig}"
+
+
+def verify_token(token: str) -> Optional[dict]:
+    """Verify and decode a token. Returns None if invalid."""
+    try:
+        parts = token.split(".")
+        if len(parts) != 2:
+            return None
+        payload_b64, sig = parts
+        expected_sig = hashlib.sha256(f"{payload_b64}.{_SECRET_KEY}".encode()).hexdigest()
+        if sig != expected_sig:
+            return None
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + "=="))
+        if payload.get("exp", 0) < time.time():
+            return None
+        return payload
+    except Exception:
+        return None
 
 
 def get_user_from_request(req: func.HttpRequest) -> Optional[dict]:
     """
-    Extract user claims from the request.
-    Returns dict with user_id, email, role or None if not authenticated.
+    Extract user from Bearer token.
+    Returns dict with user_id, email, role, name or None if not authenticated.
     """
-    auth_header = req.headers.get("x-ms-client-principal")
-    if not auth_header:
-        auth_header = req.headers.get("Authorization", "")
+    auth_header = req.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
 
-    try:
-        # Azure Static Web Apps passes user info via header
-        if "x-ms-client-principal" in req.headers:
-            import base64
-            decoded = base64.b64decode(req.headers["x-ms-client-principal"]).decode("utf-8")
-            principal = json.loads(decoded)
-            user_claims = {}
-            for claim in principal.get("userRoles", []):
-                pass
-            for claim in principal.get("claims", []):
-                user_claims[claim["typ"]] = claim["val"]
-            return {
-                "user_id": user_claims.get("oid", ""),
-                "email": user_claims.get("emails", user_claims.get("email", "")),
-                "role": user_claims.get("extension_role", "seller"),
-                "name": user_claims.get("name", "")
-            }
-    except Exception as e:
-        logger.warning(f"Could not parse principal header: {e}")
+    token = auth_header[7:]
+    payload = verify_token(token)
+    if not payload:
+        return None
 
-    return None
+    return {
+        "user_id": str(payload.get("sub", "")),
+        "email": payload.get("email", ""),
+        "role": payload.get("role", "seller"),
+        "name": payload.get("name", "")
+    }
 
 
 def require_auth(func):

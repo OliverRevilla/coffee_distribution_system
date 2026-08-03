@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { useMsal } from '@azure/msal-react'
-import { loginRequest } from '../config/auth'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7071/api'
 
 interface User {
   user_id: string
@@ -12,100 +12,58 @@ interface User {
 interface AuthContextType {
   user: User | null
   loading: boolean
-  login: () => Promise<void>
+  login: (email: string) => Promise<void>
   logout: () => void
   getAccessToken: () => Promise<string | null>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-function getRoleFromClaims(claims: Record<string, unknown>): string {
-  // Microsoft Entra External ID custom claims
-  const extensionRole = claims['extension_role'] || claims['extension_<appid>_role']
-  if (extensionRole) {
-    return String(extensionRole).toLowerCase()
-  }
-  // Check for roles claim (app roles)
-  const roles = claims['roles'] || claims['role']
-  if (Array.isArray(roles)) {
-    return roles[0] || 'seller'
-  }
-  if (typeof roles === 'string') {
-    return roles.toLowerCase()
-  }
-  return 'seller' // Default role
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { instance, accounts } = useMsal()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const loadUser = async () => {
-      if (accounts.length > 0) {
-        const account = accounts[0]
-        try {
-          // Get ID token to extract claims including custom role
-          const response = await instance.acquireTokenSilent({
-            scopes: loginRequest.scopes,
-            account: accounts[0],
-          })
-          
-          const idTokenClaims = response.idTokenClaims as Record<string, unknown>
-          const role = getRoleFromClaims(idTokenClaims)
-          
-          setUser({
-            user_id: account.localAccountId,
-            email: account.username,
-            role: role,
-            name: account.name || '',
-          })
-        } catch (error) {
-          console.error('Failed to get user claims:', error)
-          // Fallback to basic account info
-          setUser({
-            user_id: account.localAccountId,
-            email: account.username,
-            role: 'seller',
-            name: account.name || '',
-          })
-        }
+    const token = localStorage.getItem('auth_token')
+    const storedUser = localStorage.getItem('auth_user')
+    if (token && storedUser) {
+      try {
+        setUser(JSON.parse(storedUser))
+      } catch {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
       }
-      setLoading(false)
     }
-    
-    loadUser()
-  }, [accounts, instance])
+    setLoading(false)
+  }, [])
 
-  const login = async () => {
-    try {
-      await instance.loginRedirect(loginRequest)
-    } catch (error) {
-      console.error('Login failed:', error)
+  const login = async (email: string) => {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || 'Login failed')
     }
+
+    const { token, user: userData } = await res.json()
+    localStorage.setItem('auth_token', token)
+    localStorage.setItem('auth_user', JSON.stringify(userData))
+    setUser(userData)
   }
 
   const logout = () => {
-    instance.logoutRedirect({ postLogoutRedirectUri: '/' })
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('auth_user')
+    setUser(null)
+    window.location.href = '/login'
   }
 
   const getAccessToken = async (): Promise<string | null> => {
-    if (accounts.length === 0) return null
-    try {
-      const response = await instance.acquireTokenSilent({
-        ...loginRequest,
-        account: accounts[0],
-      })
-      return response.accessToken
-    } catch {
-      try {
-        const response = await instance.acquireTokenRedirect(loginRequest)
-        return response.accessToken
-      } catch {
-        return null
-      }
-    }
+    return localStorage.getItem('auth_token')
   }
 
   return (
