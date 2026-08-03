@@ -2,11 +2,23 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
+  infrastructure-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Bicep CLI
+        run: |
+          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x bicep
+          sudo mv bicep /usr/local/bin/bicep
+      - name: Validate Bicep template
+        run: az bicep build infrastructure/main.bicep
+
   api-lint-and-test:
     runs-on: ubuntu-latest
     defaults:

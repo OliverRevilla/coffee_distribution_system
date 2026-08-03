@@ -1,8 +1,8 @@
 @description('Azure region for all resources')
 param location string = resourceGroup().location
 
-@description('Environment name (staging or production)')
-param environmentName string = 'staging'
+@description('Environment name')
+param environmentName string = 'production'
 
 @description('PostgreSQL Admin password')
 @secure()
@@ -18,10 +18,13 @@ param azureMapsKey string
 var postgresServerName = 'cafedist${environmentName}pg'
 var postgresDatabaseName = 'cafe_distribution'
 var keyVaultName = 'kv${uniqueString(resourceGroup().id)}'
-var functionAppName = 'cafe-dist-${environmentName}-api'
+var appServicePlanName = 'cafe-dist-${environmentName}-plan'
+var webAppName = 'cafe-dist-${environmentName}-api'
 var staticWebAppName = 'cafe-dist-${environmentName}-web'
 var storageAccountName = 'cafedist${environmentName}stor'
-var appServicePlanName = 'cafe-dist-${environmentName}-plan'
+var appInsightsName = 'cafe-dist-${environmentName}-insights'
+var postgresSkuName = 'Standard_B1ms'
+var postgresStorageGB = 16
 
 // ─── Storage Account ───────────────────────────────────────────
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
@@ -32,6 +35,17 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   properties: {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
+  }
+}
+
+// ─── Application Insights ──────────────────────────────────────
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: appInsightsName
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: null
   }
 }
 
@@ -54,12 +68,12 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
 resource postgresServer 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: postgresServerName
   location: location
-  sku: { name: 'Standard_B2ms', tier: 'Burstable' }
+  sku: { name: postgresSkuName, tier: 'Burstable' }
   properties: {
     version: '16'
     administratorLogin: postgresAdminLogin
     administratorLoginPassword: postgresAdminPassword
-    storage: { storageSizeGB: 32 }
+    storage: { storageSizeGB: postgresStorageGB }
     backup: { backupRetentionDays: 7, geoRedundantBackup: 'Disabled' }
     highAvailability: { mode: 'Disabled' }
   }
@@ -70,42 +84,44 @@ resource postgresDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2
   name: postgresDatabaseName
 }
 
-// ─── App Service Plan (Consumption - Linux) ─────────────────────
+// ─── App Service Plan (Linux) ──────────────────────────────────
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
   name: appServicePlanName
   location: location
   kind: 'linux'
-  sku: { name: 'Y1', tier: 'Dynamic' }
+  sku: { name: 'B1', tier: 'Basic' }
   properties: {
     reserved: true
   }
 }
 
-// ─── Function App ───────────────────────────────────────────────
-resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
-  name: functionAppName
+// ─── Flask API (App Service) ───────────────────────────────────
+resource webApp 'Microsoft.Web/sites@2022-09-01' = {
+  name: webAppName
   location: location
-  kind: 'functionapp,linux'
+  kind: 'app,linux'
   identity: { type: 'SystemAssigned' }
   properties: {
     serverFarmId: appServicePlan.id
+    httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'Python|3.11'
+      appCommandLine: 'gunicorn --bind=0.0.0.0 --timeout 600 app:app'
       appSettings: [
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'WEBSITE_CONTENTAZUREFILESHARE', value: '' }
-        { name: 'WEBSITE_CONTENTOVERWRITE', value: 'true' }
-        { name: 'WEBSITE_SKIP_CONTENTSHARE_VALIDATION', value: '1' }
         { name: 'DATABASE_URL', value: 'postgresql://${postgresAdminLogin}:${postgresAdminPassword}@${postgresServer.properties.fullyQualifiedDomainName}:5432/${postgresDatabaseName}?sslmode=require' }
+        { name: 'AUTH_SECRET_KEY', value: '${keyVault.properties.vaultUri}secrets/AUTH-SECRET-KEY' }
         { name: 'AZURE_MAPS_KEY', value: azureMapsKey }
+        { name: 'APPINSIGHTS_INSTRUMENTATIONKEY', value: appInsights.properties.InstrumentationKey }
+        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
+        { name: 'ENABLE_ORYX_BUILD_SYSTEM', value: 'true' }
       ]
       cors: {
-        allowedOrigins: ['*']
+        allowedOrigins: [
+          'https://${staticWebAppName}.azurestaticapps.net'
+          'http://localhost:5173'
+        ]
       }
     }
-    httpsOnly: true
   }
 }
 
@@ -132,10 +148,17 @@ resource keyVaultSecretMapsKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = 
   properties: { value: azureMapsKey }
 }
 
+resource keyVaultSecretAuthKey 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
+  parent: keyVault
+  name: 'AUTH-SECRET-KEY'
+  properties: { value: newGuid() }
+}
+
 // ─── Outputs ────────────────────────────────────────────────────
 output postgresServerFqdn string = postgresServer.properties.fullyQualifiedDomainName
-output functionAppName string = functionApp.name
+output webAppName string = webApp.name
 output staticWebAppName string = staticWebApp.name
 output keyVaultName string = keyVault.name
 output storageAccountName string = storageAccount.name
 output resourceGroupName string = resourceGroup().name
+output appInsightsName string = appInsights.name

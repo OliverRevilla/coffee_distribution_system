@@ -13,7 +13,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_SECRET_KEY = os.environ.get("AUTH_SECRET_KEY", "dev-secret-change-in-production")
+_SECRET_KEY = os.environ.get("AUTH_SECRET_KEY")
+if not _SECRET_KEY:
+    logger.warning("AUTH_SECRET_KEY not set — using insecure dev key. Do NOT use in production.")
+    _SECRET_KEY = "dev-secret-change-in-production"
 
 
 def hash_password(password: str) -> str:

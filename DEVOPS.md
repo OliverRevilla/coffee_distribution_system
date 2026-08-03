@@ -8,14 +8,19 @@
 │  Resource Group: coffee-distribution-rg (westus2)       │
 │                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │ PostgreSQL  │  │ Function App│  │ Static Web  │    │
-│  │ (Flexible)  │  │   (API)     │  │    App      │    │
+│  │ PostgreSQL  │  │  App Service│  │ Static Web  │    │
+│  │ (Flexible)  │  │   (Flask)   │  │    App      │    │
 │  └─────────────┘  └─────────────┘  └─────────────┘    │
 │                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
 │  │Key Vault    │  │   Storage   │  │ Azure Maps  │    │
 │  │ (secrets)   │  │  Account    │  │  (Gen2)     │    │
 │  └─────────────┘  └─────────────┘  └─────────────┘    │
+│                                                         │
+│  ┌─────────────┐                                       │
+│  │App Insights │                                       │
+│  │(monitoring) │                                       │
+│  └─────────────┘                                       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -105,10 +110,10 @@ az deployment group create \
 
 ---
 
-## Step 7: Get Function App Publish Profile
+## Step 7: Get App Service Publish Profile
 
 ```bash
-az functionapp deployment list-publishing-profiles \
+az webapp deployment list-publishing-profiles \
   --name "cafe-dist-production-api" \
   --resource-group "coffee-distribution-rg" \
   --xml
@@ -137,8 +142,8 @@ Go to **Settings → Secrets and variables → Actions → New repository secret
 | `AZURE_RESOURCE_GROUP` | `coffee-distribution-rg` |
 | `POSTGRES_ADMIN_PASSWORD` | Step 4 — your password |
 | `AZURE_MAPS_KEY` | Step 5 — primaryKey |
-| `AZURE_FUNCTIONS_PUBLISH_PROFILE` | Step 7 — entire XML |
-| `AZURE_STATIC_WEB_APPS_TOKEN` | Step 8 — token |
+| `AZURE_PROD_PUBLISH_PROFILE` | Step 7 — entire XML |
+| `AZURE_PROD_STATIC_WEB_APPS_TOKEN` | Step 8 — token |
 
 ---
 
@@ -159,7 +164,7 @@ git push origin main
 Old App Service Plan exists as Windows. Delete it:
 
 ```bash
-az functionapp plan delete --name "cafe-dist-production-plan" --resource-group "coffee-distribution-rg" --yes
+az appservice plan delete --name "cafe-dist-production-plan" --resource-group "coffee-distribution-rg" --yes
 ```
 
 ### "VaultNameNotValid"
@@ -178,11 +183,11 @@ Try a different region:
 az account list-locations --output table
 ```
 
-### Consumption Plan Limitations
+### App Service Plan Limitations
 
 - No VNET integration (not needed for this project)
-- Cold start may take 1-2 seconds on first request
-- Max 10 minute execution timeout per function
+- Basic tier: 1.75 GB RAM, 10 GB storage
+- Max 10 minute request timeout
 
 ---
 
@@ -192,14 +197,14 @@ az account list-locations --output table
 # List all resources
 az resource list --resource-group "coffee-distribution-rg" --output table
 
-# Get Function App URL
-az functionapp show --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg" --query "defaultHostName" -o tsv
+# Get App Service URL
+az webapp show --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg" --query "defaultHostName" -o tsv
 
 # Get Static Web App URL
 az staticwebapp show --name "cafe-dist-production-web" --resource-group "coffee-distribution-rg" --query "defaultHostname" -o tsv
 
-# Stream Function App logs
-az functionapp log tail --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg"
+# Stream App Service logs
+az webapp log tail --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg"
 
 # Delete everything and start over
 az group delete --name "coffee-distribution-rg" --yes --no-wait
@@ -212,9 +217,10 @@ az group delete --name "coffee-distribution-rg" --yes --no-wait
 | Resource | Monthly Cost |
 |----------|--------------|
 | PostgreSQL (Burstable B1ms) | ~$12 |
-| Function App (Consumption Y1) | ~$0-5 |
+| App Service (Basic B1) | ~$13 |
 | Static Web App (Standard) | ~$9 |
 | Azure Maps (Gen2) | Pay per use (free tier available) |
 | Storage Account | ~$1 |
 | Key Vault | ~$0.03/10K operations |
-| **Total** | **~$22-23/month** |
+| Application Insights | ~$0 (free tier) |
+| **Total** | **~$35-36/month** |

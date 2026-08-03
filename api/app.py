@@ -4,8 +4,12 @@
 import os
 import json
 import logging
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from datetime import datetime, timezone
 
 from shared.db import get_connection, close_connection
 from shared.auth import (
@@ -23,6 +27,30 @@ CORS(app)
 def shutdown_session(exception=None):
     """Ensure connection is properly cleaned up."""
     pass
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    """Health check endpoint for monitoring and liveness probes."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        close_connection(conn)
+        return jsonify({
+            "status": "ok",
+            "db": "connected",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "status": "error",
+            "db": "disconnected",
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }), 503
 
 
 # ──────────────────────────────────────────────

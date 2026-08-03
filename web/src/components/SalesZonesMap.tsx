@@ -42,6 +42,8 @@ export default function SalesZonesMap({ sales }: SalesZonesMapProps) {
 
     mapInstance.current = map
 
+    setTimeout(() => map.invalidateSize(), 0)
+
     return () => {
       map.remove()
       mapInstance.current = null
