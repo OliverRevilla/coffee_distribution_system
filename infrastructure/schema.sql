@@ -6,9 +6,10 @@ CREATE TABLE distribution.users (
     id              SERIAL PRIMARY KEY,
     email           VARCHAR(256) NOT NULL UNIQUE,
     full_name       VARCHAR(256) NOT NULL,
+    password_hash   VARCHAR(512),
     role            VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'seller')),
     status          VARCHAR(20) NOT NULL DEFAULT 'active',
-    azure_b2c_id    VARCHAR(256),
+    azure_b2c_id    VARCHAR(256) DEFAULT '',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -19,6 +20,7 @@ CREATE TABLE distribution.coffee_variants (
     description     TEXT,
     sku             VARCHAR(50) NOT NULL UNIQUE,
     price           DECIMAL(10,2) NOT NULL,
+    category        VARCHAR(1) NOT NULL DEFAULT 'C' CHECK (category IN ('A', 'B', 'C')),
     image_url       VARCHAR(512),
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP

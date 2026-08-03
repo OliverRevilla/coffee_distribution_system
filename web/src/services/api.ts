@@ -21,9 +21,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      const storedUser = localStorage.getItem('auth_user')
+      const role = storedUser ? JSON.parse(storedUser).role : null
       localStorage.removeItem('auth_token')
       localStorage.removeItem('auth_user')
-      window.location.href = '/login'
+      window.location.href = role === 'admin' ? '/login/admin' : '/login/seller'
     }
     return Promise.reject(error)
   }
@@ -78,4 +80,9 @@ export const trackingApi = {
 
 export const reportsApi = {
   getSalesReport: () => api.get('/reports/sales'),
+}
+
+export const authApi = {
+  register: (data: { email: string; password: string; full_name: string; role: string }) =>
+    api.post('/auth/register', data),
 }

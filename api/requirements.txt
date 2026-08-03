@@ -1,8 +1,4 @@
-azure-functions
+flask
+flask-cors
 psycopg2-binary
 python-dotenv
-msal
-requests
-flask-cors
-pydantic
-python-dateutil

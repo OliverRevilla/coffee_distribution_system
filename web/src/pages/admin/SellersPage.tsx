@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { sellersApi } from '../../services/api'
+import api from '../../services/api'
 
 export default function SellersPage() {
   const [sellers, setSellers] = useState<any[]>([])
@@ -8,7 +8,7 @@ export default function SellersPage() {
   const [formData, setFormData] = useState({
     email: '',
     full_name: '',
-    azure_b2c_id: '',
+    password: '',
   })
 
   useEffect(() => {
@@ -17,7 +17,7 @@ export default function SellersPage() {
 
   const fetchSellers = async () => {
     try {
-      const response = await sellersApi.list()
+      const response = await api.get('/sellers')
       setSellers(response.data.sellers || [])
     } catch (error) {
       console.error('Error fetching sellers:', error)
@@ -29,12 +29,14 @@ export default function SellersPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await sellersApi.create({
-        ...formData,
+      await api.post('/auth/register', {
+        email: formData.email,
+        full_name: formData.full_name,
+        password: formData.password,
         role: 'seller',
       })
       setShowAddModal(false)
-      setFormData({ email: '', full_name: '', azure_b2c_id: '' })
+      setFormData({ email: '', full_name: '', password: '' })
       fetchSellers()
     } catch (error) {
       console.error('Error creating seller:', error)
@@ -43,7 +45,7 @@ export default function SellersPage() {
 
   const handleToggleStatus = async (id: number, currentStatus: string) => {
     try {
-      await sellersApi.updateStatus(id, {
+      await api.put(`/sellers/${id}/status`, {
         status: currentStatus === 'active' ? 'inactive' : 'active',
       })
       fetchSellers()
@@ -166,12 +168,13 @@ export default function SellersPage() {
                 />
               </div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700">Azure B2C Object ID</label>
+                <label className="block text-sm font-medium text-gray-700">Password</label>
                 <input
-                  type="text"
+                  type="password"
                   required
-                  value={formData.azure_b2c_id}
-                  onChange={(e) => setFormData({ ...formData, azure_b2c_id: e.target.value })}
+                  minLength={6}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-amber-500 focus:border-amber-500"
                 />
               </div>

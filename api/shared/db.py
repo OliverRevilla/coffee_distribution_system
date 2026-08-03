@@ -9,6 +9,11 @@ _connection: Optional[psycopg2.extensions.connection] = None
 def get_connection() -> psycopg2.extensions.connection:
     """Get or create a database connection singleton."""
     global _connection
+    if _connection is not None and not _connection.closed:
+        try:
+            _connection.rollback()
+        except Exception:
+            pass
     if _connection is None or _connection.closed:
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:

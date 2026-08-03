@@ -1,6 +1,6 @@
-# Coffee Distribution System - Azure Cloud Architecture
+# Coffee Distribution System
 
-A cloud-based distribution management system for a coffee company with multiple sellers and two administrators. Tracks inventory, sales, complaints, and sales routes with GPS tracking. Accessible from any device via web and mobile apps.
+A distribution management system for a coffee company with multiple sellers and two administrators. Tracks inventory, sales, complaints, and sales routes with GPS tracking. Includes dashboards with charts and interactive maps. Accessible from any device via web app.
 
 ---
 
@@ -8,15 +8,14 @@ A cloud-based distribution management system for a coffee company with multiple 
 
 1. [System Overview](#system-overview)
 2. [Roles & Permissions](#roles--permissions)
-3. [Architecture Diagram](#architecture-diagram)
-4. [Azure Services](#azure-services)
-5. [Data Model](#data-model)
-6. [API Endpoints](#api-endpoints)
-7. [Security & Sensitive Information](#security--sensitive-information)
-8. [DevSecOps Pipeline](#devsecops-pipeline)
-9. [Implementation Phases](#implementation-phases)
-10. [Local Development Setup](#local-development-setup)
-11. [Troubleshooting](#troubleshooting)
+3. [Architecture](#architecture)
+4. [Data Model](#data-model)
+5. [API Endpoints](#api-endpoints)
+6. [Authentication](#authentication)
+7. [Dashboard Features](#dashboard-features)
+8. [Local Development Setup](#local-development-setup)
+9. [Database Seeding](#database-seeding)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -26,9 +25,12 @@ A cloud-based distribution management system for a coffee company with multiple 
 |--------|---------|
 | **Purpose** | Coffee distribution management for sellers and administrators |
 | **Users** | 2 Administrators + up to 20 Sellers |
-| **Access** | Web (React) + Mobile (React Native) from any device |
+| **Access** | Web (React + Vite + TypeScript) from any device |
 | **Tracking** | Real-time GPS tracking for delivery routes |
-| **Budget** | ~$15-16/month estimated Azure cost |
+| **Backend** | Python Flask API (port 7071) |
+| **Database** | PostgreSQL with `distribution` schema |
+| **Frontend Charts** | Recharts library for analytics |
+| **Maps** | Leaflet with OpenStreetMap for sales zones |
 
 ---
 
@@ -36,101 +38,124 @@ A cloud-based distribution management system for a coffee company with multiple 
 
 | Role | Capabilities |
 |------|-------------|
-| **Administrator** (x2) | Full CRUD on inventory, sales reports, complaint management, route creation/assignment, seller management, analytics dashboards |
-| **Seller** (up to 20) | View assigned routes, register sales, view own sales history, submit complaints, GPS check-in at delivery points |
+| **Administrator** | Full CRUD on inventory, sales reports with charts, complaint management, route creation/assignment, seller management, analytics dashboards, sales zones map |
+| **Seller** | View assigned routes, register sales, view own sales history and charts, submit complaints, GPS check-in at delivery points |
 
 ---
 
-## Architecture Diagram
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         CLIENT LAYER                                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │
-│  │  React Web   │  │ React Native │  │  Azure AD B2C            │  │
-│  │  App (Admin) │  │ Mobile App   │  │  Authentication          │  │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────────┘  │
-└─────────┼─────────────────┼──────────────────────┼──────────────────┘
-          │                 │                      │
-          ▼                 ▼                      │
-┌─────────────────────────────────────────┐       │
-│       Azure Static Web Apps             │       │
-│  ┌─────────────────────────────────┐    │       │
-│  │  Azure Functions (Python)       │◄───┘       │
-│  │  - API Endpoints                │            │
-│  │  - GPS Tracking Functions       │            │
-│  │  - Scheduled Jobs               │            │
-│  └────────────────┬────────────────┘            │
-└───────────────────┼─────────────────────────────┘
-                    │
-          ┌─────────┴─────────┐
-          ▼                   ▼
-┌──────────────────┐  ┌──────────────────┐
-│  Azure Database  │  │  Azure Maps      │
-│  for PostgreSQL  │  │  Service         │
-│  (~$12/month)    │  │  (GPS Tracking)  │
-└──────────────────┘  └──────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                      CLIENT LAYER                                │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  React Web App (Vite + TypeScript)                        │   │
+│  │  ┌─────────────────┐  ┌──────────────────────────────┐   │   │
+│  │  │  Seller Login    │  │  Admin Login                  │   │   │
+│  │  │  /login/seller   │  │  /login/admin                 │   │   │
+│  │  └─────────────────┘  └──────────────────────────────┘   │   │
+│  │  ┌─────────────────┐  ┌──────────────────────────────┐   │   │
+│  │  │  Seller Register │  │  Admin Dashboard              │   │   │
+│  │  │  /register/seller│  │  - Charts (Recharts)          │   │   │
+│  │  └─────────────────┘  │  - Sales Zones Map (Leaflet)  │   │   │
+│  │                       │  - Reports & Analytics         │   │   │
+│  │  ┌─────────────────┐  └──────────────────────────────┘   │   │
+│  │  │  Seller Dashboard│                                     │   │
+│  │  │  - Sales Charts  │  ┌──────────────────────────────┐   │   │
+│  │  │  - Routes        │  │  Admin Pages                  │   │   │
+│  │  └─────────────────┘  │  - Inventory (categories A/B/C)│   │   │
+│  │                       │  - Sales                       │   │   │
+│  │                       │  - Routes                      │   │   │
+│  │                       │  - Complaints                  │   │   │
+│  │                       │  - Sellers                     │   │   │
+│  │                       └──────────────────────────────┘   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ HTTP/REST + Bearer Token
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    API LAYER (Flask)                              │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  Python Flask Server (port 7071)                          │   │
+│  │  - Email/Password Authentication                         │   │
+│  │  - HMAC-signed JWT Tokens                                │   │
+│  │  - REST API Endpoints (18 routes)                         │   │
+│  │  - CORS enabled for localhost:5173                        │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    DATA LAYER                                    │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  PostgreSQL Database (distribution schema)                │   │
+│  │  - Users (admin/seller roles, password_hash)              │   │
+│  │  - Coffee Variants (categories A/B/C, prices)             │   │
+│  │  - Inventory (stock levels, reorder points)               │   │
+│  │  - Sales (40+ records, GPS coordinates)                   │   │
+│  │  - Routes & Waypoints (Lima, Peru locations)              │   │
+│  │  - GPS Locations (real-time tracking)                     │   │
+│  │  - Complaints (open/in-progress/resolved)                 │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## Azure Services
-
-| Service | Purpose | Tier | Est. Cost |
-|---------|---------|------|-----------|
-| **Azure AD B2C** | Authentication & role-based access | Free | $0 (50K auths/month) |
-| **Azure Static Web Apps** | React hosting + CI/CD + integrated API | Standard | ~$9/month |
-| **Azure Functions** | Serverless Python API | Consumption (Y1) | ~$0-5/month |
-| **Azure Database for PostgreSQL** | Relational data store | Burstable B1ms | ~$12/month |
-| **Azure Maps** | GPS tracking & route visualization | Gen2 | Pay per use |
-| **Azure Key Vault** | Secrets management | Standard | ~$0.03/10K ops |
-| **Storage Account** | Functions runtime storage | Standard LRS | ~$1/month |
-| **Total** | | | **~$22-23/month** |
 
 ---
 
 ## Data Model
 
+### Product Categories
+
+| Category | Description | Price Range | Products |
+|----------|-------------|-------------|----------|
+| **A** | Premium - Highest quality, specialty origins | $15-17 | Etíope Yirgacheffe, Tueste Italiano |
+| **B** | Standard - Medium quality, balanced flavors | $13-15 | Colombiano Supremo, Descafeinado Casa |
+| **C** | Economy - Everyday coffee, best value | $11-13 | Espresso Blend, Tueste Francés |
+
+### Tables
+
 ```sql
--- Users table (synced from Azure AD B2C)
-CREATE TABLE Users (
+-- Users table
+CREATE TABLE distribution.users (
     id              SERIAL PRIMARY KEY,
     email           VARCHAR(256) NOT NULL UNIQUE,
     full_name       VARCHAR(256) NOT NULL,
+    password_hash   VARCHAR(512),
     role            VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'seller')),
     status          VARCHAR(20) NOT NULL DEFAULT 'active',
-    azure_b2c_id    VARCHAR(256) NOT NULL UNIQUE,
+    azure_b2c_id    VARCHAR(256) DEFAULT '',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Coffee variants
-CREATE TABLE CoffeeVariants (
+-- Coffee variants with categories
+CREATE TABLE distribution.coffee_variants (
     id              SERIAL PRIMARY KEY,
     name            VARCHAR(256) NOT NULL,
     description     TEXT,
     sku             VARCHAR(50) NOT NULL UNIQUE,
     price           DECIMAL(10,2) NOT NULL,
+    category        VARCHAR(1) NOT NULL DEFAULT 'C' CHECK (category IN ('A', 'B', 'C')),
     image_url       VARCHAR(512),
     is_active       BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Inventory tracking
-CREATE TABLE Inventory (
+CREATE TABLE distribution.inventory (
     id                  SERIAL PRIMARY KEY,
-    variant_id          INT NOT NULL REFERENCES CoffeeVariants(id),
+    variant_id          INT NOT NULL REFERENCES distribution.coffee_variants(id),
     quantity            INT NOT NULL DEFAULT 0,
     warehouse_location  VARCHAR(256),
     reorder_point       INT DEFAULT 10,
     last_updated        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_by          INT REFERENCES Users(id)
+    updated_by          INT REFERENCES distribution.users(id)
 );
 
 -- Sales records
-CREATE TABLE Sales (
+CREATE TABLE distribution.sales (
     id              SERIAL PRIMARY KEY,
-    seller_id       INT NOT NULL REFERENCES Users(id),
-    variant_id      INT NOT NULL REFERENCES CoffeeVariants(id),
+    seller_id       INT NOT NULL REFERENCES distribution.users(id),
+    variant_id      INT NOT NULL REFERENCES distribution.coffee_variants(id),
     quantity        INT NOT NULL,
     unit_price      DECIMAL(10,2) NOT NULL,
     total_amount    DECIMAL(10,2) NOT NULL,
@@ -143,11 +168,11 @@ CREATE TABLE Sales (
 );
 
 -- Delivery routes
-CREATE TABLE Routes (
+CREATE TABLE distribution.routes (
     id                  SERIAL PRIMARY KEY,
     name                VARCHAR(256) NOT NULL,
     description         TEXT,
-    assigned_seller_id  INT REFERENCES Users(id),
+    assigned_seller_id  INT REFERENCES distribution.users(id),
     status              VARCHAR(20) DEFAULT 'pending'
                         CHECK (status IN ('pending', 'in_progress', 'completed')),
     route_date          DATE NOT NULL,
@@ -155,9 +180,9 @@ CREATE TABLE Routes (
 );
 
 -- Route waypoints (delivery stops)
-CREATE TABLE RouteWaypoints (
+CREATE TABLE distribution.route_waypoints (
     id                  SERIAL PRIMARY KEY,
-    route_id            INT NOT NULL REFERENCES Routes(id) ON DELETE CASCADE,
+    route_id            INT NOT NULL REFERENCES distribution.routes(id) ON DELETE CASCADE,
     sequence            INT NOT NULL,
     customer_name       VARCHAR(256),
     address             VARCHAR(512),
@@ -171,9 +196,9 @@ CREATE TABLE RouteWaypoints (
 );
 
 -- GPS location tracking
-CREATE TABLE GPSLocations (
+CREATE TABLE distribution.gps_locations (
     id          BIGSERIAL PRIMARY KEY,
-    seller_id   INT NOT NULL REFERENCES Users(id),
+    seller_id   INT NOT NULL REFERENCES distribution.users(id),
     latitude    DECIMAL(9,6) NOT NULL,
     longitude   DECIMAL(9,6) NOT NULL,
     accuracy    DECIMAL(5,2),
@@ -181,9 +206,9 @@ CREATE TABLE GPSLocations (
 );
 
 -- Complaints
-CREATE TABLE Complaints (
+CREATE TABLE distribution.complaints (
     id              SERIAL PRIMARY KEY,
-    seller_id       INT NOT NULL REFERENCES Users(id),
+    seller_id       INT NOT NULL REFERENCES distribution.users(id),
     customer_name   VARCHAR(256),
     subject         VARCHAR(256) NOT NULL,
     description     TEXT NOT NULL,
@@ -198,21 +223,36 @@ CREATE TABLE Complaints (
 );
 ```
 
+### Database Migration
+
+If you have an existing database without the `category` column:
+
+```sql
+ALTER TABLE distribution.coffee_variants ADD COLUMN category VARCHAR(1) NOT NULL DEFAULT 'C';
+```
+
 ---
 
 ## API Endpoints
 
-All endpoints are served via Azure Functions (Python) and require Azure AD B2C authentication.
+All endpoints are served via Flask (Python) on port 7071.
+
+### Authentication
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| POST | `/api/auth/login` | Login with email/password | Public |
+| POST | `/api/auth/register/seller` | Register as seller | Public |
+| POST | `/api/auth/register` | Create user (admin only) | Admin |
 
 ### Inventory
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
-| GET | `/api/inventory` | List all inventory items | Admin |
+| GET | `/api/inventory` | List all inventory items (with category) | Admin |
 | GET | `/api/inventory/{id}` | Get single item | Admin |
 | POST | `/api/inventory` | Add new inventory | Admin |
 | PUT | `/api/inventory/{id}` | Update inventory | Admin |
-| GET | `/api/variants` | List coffee variants | All |
-| POST | `/api/variants` | Add new variant | Admin |
+| GET | `/api/variants` | List coffee variants (with category, sorted by category) | All |
+| POST | `/api/variants` | Add new variant (with category) | Admin |
 
 ### Sales
 | Method | Endpoint | Description | Access |
@@ -226,10 +266,11 @@ All endpoints are served via Azure Functions (Python) and require Azure AD B2C a
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
 | GET | `/api/routes` | List routes | All |
-| POST | `/api/routes` | Create route | Admin |
+| POST | `/api/routes` | Create route with waypoints | Admin |
 | PUT | `/api/routes/{id}/assign` | Assign route to seller | Admin |
 | POST | `/api/tracking/location` | Update seller GPS location | Seller |
 | GET | `/api/tracking/seller/{id}` | Get seller location history | Admin |
+| GET | `/api/tracking/seller/{id}/latest` | Get seller latest location | Admin |
 | POST | `/api/routes/{id}/checkin` | Check in at waypoint | Seller |
 
 ### Complaints
@@ -250,325 +291,82 @@ All endpoints are served via Azure Functions (Python) and require Azure AD B2C a
 
 ---
 
-## Security & Sensitive Information
+## Authentication
 
-### CRITICAL: Sensitive Data Handling
+### Login Pages
 
-> **WARNING**: Never commit real secrets, keys, passwords, or connection strings to version control.
-> All sensitive values are managed through Azure Key Vault and GitHub Secrets.
+| Page | URL | Target |
+|------|-----|--------|
+| Landing page | `/login` | Choose seller or admin |
+| Seller login | `/login/seller` | Redirects to `/dashboard` |
+| Admin login | `/login/admin` | Redirects to `/admin` |
+| Seller register | `/register/seller` | Public registration |
 
-### Secrets Required (Stored in Azure Key Vault + GitHub Secrets)
+### Login Flow
 
-| Secret Name | Description | Where Used |
-|-------------|-------------|------------|
-| `DATABASE_URL` | PostgreSQL connection string | Azure Functions App Settings (auto via Bicep) |
-| `AZURE_MAPS_KEY` | Azure Maps API key | Azure Functions App Settings (auto via Bicep) |
-| `AZURE_B2C_TENANT_NAME` | Azure AD B2C tenant identifier | Azure Functions + Static Web Apps (manual) |
-| `AZURE_B2C_CLIENT_ID` | App registration client ID | Azure Functions + Static Web Apps (manual) |
-| `AZURE_B2C_CLIENT_SECRET` | App registration client secret | Azure Functions App Settings (manual) |
-| `AZURE_B2C_POLICY_NAME` | Sign-up/sign-in user flow name | Static Web Apps config (manual) |
+1. User navigates to `/login/seller` or `/login/admin`
+2. Enters email + password
+3. Backend verifies password against PBKDF2-SHA256 hash
+4. HMAC-signed token returned (24h expiry)
+5. Token stored in localStorage
+6. Token sent with every API request via `Authorization: Bearer` header
+7. Role-based redirect after login
 
-### Where Secrets Are Stored
+### User Registration
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                  SECRETS FLOW                           │
-│                                                         │
-│  Developer Local ──► GitHub Secrets (CI/CD)             │
-│         │                    │                          │
-│         ▼                    ▼                          │
-│  .env (gitignored)    GitHub Actions                    │
-│                             │                          │
-│                             ▼                          │
-│                    Azure Key Vault                     │
-│                        │    │                          │
-│                        ▼    ▼                          │
-│               Azure Functions    Azure Static Web Apps │
-│               App Settings       App Settings          │
-└─────────────────────────────────────────────────────────┘
-```
+- **Sellers**: Self-register at `/register/seller` (public, no restrictions)
+- **Admins**: Created only by existing admins via the `/admin/sellers` page
 
-### .gitignore Rules
+### Password Security
 
-The following files are **NEVER** committed:
-
-```
-# Environment and secrets
-.env
-.env.local
-.env.production
-*.pem
-*.key
-
-# Azure
-azure-functions/**/local.settings.json
-
-# Node modules
-node_modules/
-web/node_modules/
-mobile/node_modules/
-api/**/__pycache__/
-
-# Build outputs
-dist/
-build/
-*.log
-```
-
-### Key Vault Secrets Setup
-
-Key Vault is created automatically by the Bicep template. Secrets are stored automatically:
-
-- `DATABASE-URL`
-- `AZURE-MAPS-KEY`
-
-To add additional secrets:
-
-```bash
-az keyvault secret set --vault-name "kv<uniqueString>" --name "AZURE-B2C-CLIENT-ID" --value "<YOUR_CLIENT_ID>"
-az keyvault secret set --vault-name "kv<uniqueString>" --name "AZURE-B2C-CLIENT-SECRET" --value "<YOUR_CLIENT_SECRET>"
-```
-
-To grant Azure Functions access to Key Vault:
-
-```bash
-az keyvault set-policy \
-  --name "kv<uniqueString>" \
-  --object-id "<FUNCTION_APP_MANAGED_IDENTITY_OBJECT_ID>" \
-  --secret-permissions get list
-```
+- Passwords hashed with PBKDF2-SHA256 (100,000 iterations)
+- Random 16-byte salt per password
+- Stored as `{salt}${hex_hash}`
+- Constant-time comparison via `hmac.compare_digest` to prevent timing attacks
 
 ---
 
-## DevSecOps Pipeline
+## Dashboard Features
 
-### Pipeline Overview
+### Admin Dashboard (`/admin`)
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    DevSecOps Pipeline                            │
-│                                                                 │
-│  ┌─────────┐   ┌──────────┐   ┌──────────┐   ┌──────────────┐ │
-│  │  Code   │──►│  Build   │──►│  Test    │──►│  Security    │ │
-│  │  Push   │   │          │   │          │   │  Scan        │ │
-│  └─────────┘   └──────────┘   └──────────┘   └──────┬───────┘ │
-│                                                      │         │
-│                                                      ▼         │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                    Deploy                               │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │   │
-│  │  │   Staging    │──►│  Approval    │──►│  Production  │  │   │
-│  │  │   (Auto)     │  │  (Manual)    │  │  (Auto)      │  │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Feature | Description |
+|---------|-------------|
+| **Summary Cards** | Total sales, revenue, active sellers, total sellers |
+| **Sales Trend Chart** | Line chart showing revenue over last 30 days |
+| **Revenue by Product** | Bar chart showing revenue per coffee variant |
+| **Revenue by Seller** | Pie chart showing revenue distribution |
+| **Sales Count by Seller** | Horizontal bar chart showing sales count |
+| **Sales Zones Map** | Interactive Leaflet map with bubble markers showing most frequent sales zones in Lima, Peru |
+| **Sales by Seller Table** | Detailed table with sales count and revenue |
+| **Sales by Date Table** | Scrollable table with daily sales data |
 
-### GitHub Actions Workflows
+### Seller Dashboard (`/dashboard`)
 
-#### 1. CI Pipeline (`.github/workflows/ci.yml`)
+| Feature | Description |
+|---------|-------------|
+| **Summary Cards** | Pending routes, total sales, total revenue |
+| **Sales Trend Chart** | Line chart showing personal revenue over time |
+| **Sales by Product** | Bar chart showing revenue per product |
+| **Recent Sales Table** | Last 10 sales with date, variant, customer, qty, total |
 
-Triggers on every push and pull request to `main` and `develop`:
+### Sales Zones Map
 
-```yaml
-name: CI Pipeline
+- **Technology**: Leaflet with OpenStreetMap tiles
+- **Visualization**: Bubble markers sized by number of sales
+- **Location**: Centered on Lima, Peru (-12.05, -77.03)
+- **Aggregation**: Sales grouped into ~1km grid zones
+- **Interactivity**: Click bubbles to see sales count and revenue
+- **Color**: Amber (#f59e0b) with opacity based on density
 
-on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
+### Inventory Page Features
 
-jobs:
-  api-lint-and-test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: pip install flake8 pytest bandit safety
-      - name: Lint (flake8)
-        run: flake8 . --max-line-length=120
-      - name: Security scan (bandit)
-        run: bandit -r . -f json -o bandit-report.json || true
-      - name: Dependency vulnerability check (safety)
-        run: safety check --output json > safety-report.json || true
-      - name: Unit tests (pytest)
-        run: pytest tests/ -v --tb=short
-      - name: Upload security reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: api-security-reports
-          path: api/*-report.json
-
-  web-lint-and-test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run test -- --coverage --watchAll=false
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-coverage
-          path: web/coverage/
-
-  mobile-lint-and-test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mobile
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: mobile/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-```
-
-### 2. CD Pipeline (`.github/workflows/cd.yml`)
-
-Triggers on push to `main`:
-
-```yaml
-name: CD Pipeline
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-jobs:
-  deploy-production:
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -r api/requirements.txt
-      - name: Deploy Azure Functions
-        uses: Azure/functions-action@v1
-        with:
-          app-name: cafe-dist-production-api
-          package: api/
-          publish-profile: ${{ secrets.AZURE_FUNCTIONS_PUBLISH_PROFILE }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - run: cd web && npm ci && npm run build
-      - name: Deploy Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "web/dist"
-          api_location: "api"
-```
-
-### GitHub Secrets Required for CI/CD
-
-Configure these in **GitHub → Settings → Secrets and variables → Actions**:
-
-| Secret Name | Description | How to Obtain |
-|-------------|-------------|---------------|
-| `AZURE_CREDENTIALS` | Service principal JSON | `az ad sp create-for-rbac` output |
-| `AZURE_RESOURCE_GROUP` | Resource group name | `coffee-distribution-rg` |
-| `POSTGRES_ADMIN_PASSWORD` | PostgreSQL admin password | Generated during setup |
-| `AZURE_MAPS_KEY` | Azure Maps primaryKey | `az maps account keys list` output |
-| `AZURE_FUNCTIONS_PUBLISH_PROFILE` | Functions publish profile (XML) | `az functionapp deployment list-publishing-profiles --xml` |
-| `AZURE_STATIC_WEB_APPS_TOKEN` | Static Web Apps deployment token | Azure Portal → Static Web App → Manage deployment token |
-
-### Security Scanning in Pipeline
-
-| Tool | Purpose | Runs On |
-|------|---------|---------|
-| **Flake8** | Python code quality | API PRs & pushes |
-| **Bandit** | Python security vulnerability scanner | API PRs & pushes |
-| **Safety** | Python dependency vulnerability check | API PRs & pushes |
-| **ESLint** | TypeScript/React linting | Web & Mobile PRs |
-| **TypeScript Compiler** | Type safety checks | Web & Mobile PRs |
-| **Trivy** | Container/image vulnerability scanning (if containers used) | Deploy stage |
-| **CodeQL** | SAST (Static Application Security Testing) | Weekly scheduled scan |
-
----
-
-## Implementation Phases
-
-### Phase 1: Foundation (Weeks 1-3)
-
-| Task | Status | Details |
-|------|--------|---------|
-| Azure resource setup | ✅ Done | Bicep template deployed, Consumption plan (Y1) |
-| Azure Database for PostgreSQL | ✅ Done | Burstable tier deployed, `distribution` schema created |
-| Azure Key Vault | ✅ Done | Created via Bicep, secrets stored |
-| Azure Maps | ✅ Done | Gen2 account created |
-| GitHub repo setup | ✅ Done | CI/CD workflows created (`ci.yml`, `cd.yml`) |
-| GitHub Secrets | ✅ Done | All secrets configured |
-| Schema migrations | ✅ Done | DDLs created in DBeaver with `distribution` schema |
-| Project scaffolding | ✅ Done | API (Python), Web (React/Vite), Mobile (React Native) |
-| API functions (PostgreSQL) | ✅ Done | All 7 endpoints updated for PostgreSQL dialect |
-| Web app scaffolding | ✅ Done | Pages, components, hooks, services, auth config |
-| Mobile app scaffolding | ✅ Done | Screens, navigation setup |
-| Azure AD B2C configuration | ⬜ Pending | Tenant, app registrations, user flows |
-| Authentication | ⬜ Pending | Login/register/logout flows |
-
-### Phase 2: Core Modules (Weeks 4-7)
-
-| Task | Status | Details |
-|------|--------|---------|
-| Inventory management | ✅ Done | CRUD operations (`/api/inventory`) |
-| Sales tracking | ✅ Done | Register sales, GPS coordinates (`/api/sales`) |
-| Complaint management | ✅ Done | Submit, track, resolve (`/api/complaints`) |
-| Routes & GPS | ✅ Done | Routes, waypoints, check-in, GPS tracking |
-| Reports | ✅ Done | Sales analytics (`/api/reports/sales`) |
-| Variants | ✅ Done | Coffee variants CRUD (`/api/variants`) |
-| Web app (React) | ✅ Done | Admin dashboard, seller views (scaffolded) |
-| Mobile app (React Native) | ✅ Done | Seller mobile interface (scaffolded) |
-
-### Phase 3: Routes & GPS (Weeks 8-10)
-
-| Task | Status | Details |
-|------|--------|---------|
-| Route creation | ✅ Done | Admin creates routes with waypoints |
-| Route assignment | ✅ Done | Assign routes to sellers |
-| GPS tracking | ✅ Done | Real-time location updates |
-| Check-in system | ✅ Done | Seller check-in at waypoints |
-| Route visualization | ⬜ Pending | Map-based route display on admin dashboard |
-
-### Phase 4: Polish & Deploy (Weeks 11-12)
-
-| Task | Status | Details |
-|------|--------|---------|
-| Mobile app polish | ⬜ Pending | UI refinement, offline handling |
-| Integration testing | ⬜ Pending | End-to-end tests against staging |
-| Performance testing | ⬜ Pending | Load testing API endpoints |
-| Production deployment | ⬜ Pending | Final deploy, monitoring, alerting setup |
-| Documentation | ⬜ Pending | User guides, admin manual |
+- Shows product category with color-coded badges
+  - **A** (Premium): Purple badge
+  - **B** (Standard): Blue badge
+  - **C** (Economy): Gray badge
+- Stock status indicators (In Stock / Low Stock)
+- Warehouse location tracking
 
 ---
 
@@ -577,11 +375,8 @@ Configure these in **GitHub → Settings → Secrets and variables → Actions**
 ### Prerequisites
 
 - Python 3.11+
-- Node.js 20+
-- Azure Functions Core Tools v4
-- Azure CLI
-- Git
-- Docker (for local PostgreSQL)
+- Node.js 18+
+- PostgreSQL database
 
 ### 1. Clone and Setup
 
@@ -590,19 +385,7 @@ git clone <REPO_URL>
 cd coffee_distribution_system
 ```
 
-### 2. Start Local PostgreSQL
-
-```bash
-docker run -d \
-  --name cafe-postgres \
-  -e POSTGRES_USER=cafeadmin \
-  -e POSTGRES_PASSWORD=localpassword \
-  -e POSTGRES_DB=cafe_distribution \
-  -p 5432:5432 \
-  postgres:16
-```
-
-### 3. API Setup
+### 2. API Setup
 
 ```bash
 cd api
@@ -612,30 +395,48 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-Create `api/local.settings.json` (gitignored):
+### 3. Database Setup
 
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "python",
-    "DATABASE_URL": "postgresql://cafeadmin:localpassword@localhost:5432/cafe_distribution",
-    "AZURE_B2C_TENANT_NAME": "<YOUR_TENANT_NAME>",
-    "AZURE_B2C_CLIENT_ID": "<YOUR_CLIENT_ID>",
-    "AZURE_B2C_POLICY_NAME": "<YOUR_POLICY_NAME>",
-    "AZURE_MAPS_KEY": "<YOUR_MAPS_KEY>"
-  }
-}
-```
-
-Run API locally:
+Create database and schema:
 
 ```bash
-func start
+psql -U your_user -d your_database -f infrastructure/schema.sql
 ```
 
-### 4. Web App Setup
+If you have an existing database, add the category column:
+
+```sql
+ALTER TABLE distribution.coffee_variants ADD COLUMN category VARCHAR(1) NOT NULL DEFAULT 'C';
+```
+
+### 4. Configure Environment
+
+Set your database connection:
+
+```bash
+export DATABASE_URL="postgresql://cafeadmin:YOUR_PASSWORD@YOUR_HOST:5432/cafe_distribution"
+```
+
+### 5. Seed Test Data
+
+```bash
+# Create admin and test seller users
+python seed_users.py
+
+# Create test data (variants, inventory, sales, routes, complaints)
+python seed_data.py
+```
+
+### 6. Start API Server
+
+```bash
+cd api
+python app.py
+```
+
+API runs on `http://localhost:7071`
+
+### 7. Start Frontend
 
 ```bash
 cd web
@@ -643,31 +444,80 @@ npm install
 npm run dev
 ```
 
-Create `web/.env.local` (gitignored):
+Frontend runs on `http://localhost:5173`
 
-```
-VITE_API_BASE_URL=http://localhost:7071/api
-VITE_AZURE_B2C_TENANT_NAME=<YOUR_TENANT_NAME>
-VITE_AZURE_B2C_CLIENT_ID=<YOUR_CLIENT_ID>
-VITE_AZURE_B2C_POLICY_NAME=<YOUR_POLICY_NAME>
-```
+### 8. Login
 
-### 5. Mobile App Setup
+- **Seller**: Go to `http://localhost:5173/login/seller`
+  - Email: `seller@test.com`
+  - Password: `seller123`
+- **Admin**: Go to `http://localhost:5173/login/admin`
+  - Email: `admin@test.com`
+  - Password: `admin123`
+
+---
+
+## Database Seeding
+
+### seed_users.py
+
+Creates initial admin and test seller users:
+
+| Email | Password | Role |
+|-------|----------|------|
+| `admin@test.com` | `admin123` | admin |
+| `seller@test.com` | `seller123` | seller |
+
+### seed_data.py
+
+Creates test data with Lima, Peru locations:
+
+| Data | Records | Details |
+|------|---------|---------|
+| Coffee Variants | 6 | Categories A ($15-17), B ($13-15), C ($11-13) |
+| Inventory | 6 | Stock for each variant (20-200 units) |
+| Sales | 40 | Spread across 30 days with GPS coordinates |
+| Routes | 4 | With GPS waypoints in Lima districts |
+| Waypoints | 16 | Real addresses in Lima, Peru |
+| Complaints | 4 | Different statuses and priorities |
+
+#### Lima Districts in Seed Data
+
+| Route | Districts | Waypoints |
+|-------|-----------|-----------|
+| Ruta Jesús María - Miraflores | Jesús María, Miraflores | 4 stops |
+| Ruta San Isidro - Barranco | San Isidro, Barranco | 4 stops |
+| Ruta San Borja - Surco | San Borja, Surco, La Molina | 4 stops |
+| Ruta Pueblo Libre - Lince | Pueblo Libre, Lince, Magdalena, Breña | 4 stops |
+
+#### Customer Locations
+
+Sales are recorded at GPS coordinates across 15 Lima districts:
+Jesús María, Miraflores, San Isidro, Barranco, San Borja, Surco, La Molina, Pueblo Libre, Lince, Magdalena del Mar, San Miguel, Breña, Cercado de Lima, Rímac, Los Olivos
 
 ```bash
-cd mobile
-npm install
-npx react-native run-android  # or run-ios
+export DATABASE_URL="postgresql://..."
+python seed_data.py
 ```
 
-Create `mobile/.env.local` (gitignored):
+---
 
-```
-API_BASE_URL=http://<YOUR_LOCAL_IP>:7071/api
-AZURE_B2C_TENANT_NAME=<YOUR_TENANT_NAME>
-AZURE_B2C_CLIENT_ID=<YOUR_CLIENT_ID>
-AZURE_B2C_POLICY_NAME=<YOUR_POLICY_NAME>
-```
+## Tech Stack
+
+| Layer | Technology | Version |
+|-------|------------|---------|
+| Frontend | React | 18.2 |
+| Build Tool | Vite | 5.0 |
+| Language | TypeScript | 5.2 |
+| Styling | Tailwind CSS | 3.3 |
+| Charts | Recharts | 3.10 |
+| Maps | Leaflet + OpenStreetMap | 1.9 |
+| HTTP Client | Axios | 1.6 |
+| Routing | React Router DOM | 6.20 |
+| Backend | Flask | 3.x |
+| CORS | Flask-CORS | - |
+| Database | PostgreSQL | 16 |
+| DB Driver | psycopg2-binary | - |
 
 ---
 
@@ -677,49 +527,50 @@ AZURE_B2C_POLICY_NAME=<YOUR_POLICY_NAME>
 
 | Issue | Solution |
 |-------|----------|
-| Azure Functions won't start locally | Verify `local.settings.json` has correct Python version and connection strings |
-| CORS errors | Add `http://localhost:5173` to Azure Functions CORS settings |
-| Auth redirect fails | Verify redirect URI in Azure AD B2C matches your app URL + `/.auth/login/aadb2c/callback` |
-| GPS location not updating | Check mobile device location permissions and network connectivity |
-| SQL connection refused | Verify Azure SQL firewall rules allow your IP address |
-| Function App cold start | Consumption plan may take 1-2 seconds on first request - this is normal |
+| `DATABASE_URL not configured` | Set the environment variable before running |
+| `ModuleNotFoundError` | Run `pip install -r requirements.txt` |
+| `column cv.category does not exist` | Run the ALTER TABLE migration SQL |
+| `InFailedSqlTransaction` | Restart the Flask server |
+| CORS errors | Restart Flask server (CORS configured for localhost:5173) |
+| Charts not loading | Run `cd web && rm -rf node_modules/.vite && npm run dev` |
+| Map not showing | Restart frontend, check Leaflet CSS loads |
+| Port 7071 in use | Change port in `api/app.py` or kill existing process |
+| `current transaction is aborted` | Restart Flask server to reset connection |
 
-### Azure CLI Quick Reference
+### Quick Commands
 
 ```bash
-# Login to Azure
-az login
+# Restart API
+cd api && python app.py
 
-# List subscriptions
-az account list -o table
+# Restart Frontend
+cd web && npm run dev
 
-# Set active subscription
-az account set --subscription "<SUBSCRIPTION_NAME>"
+# Clear Vite cache
+cd web && rm -rf node_modules/.vite && npm run dev
 
-# Create resource group
-az group create --name "coffee-distribution-rg" --location "westus2"
+# Re-seed database (users + test data)
+python seed_users.py && python seed_data.py
 
-# Deploy infrastructure
-az deployment group create \
-  --resource-group "coffee-distribution-rg" \
-  --template-file infrastructure/main.bicep \
-  --parameters \
-    environmentName=production \
-    postgresAdminPassword="<YOUR_PASSWORD>" \
-    azureMapsKey="<YOUR_MAPS_KEY>"
-
-# Get Function App URL
-az functionapp show --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg" --query "defaultHostName" -o tsv
-
-# Get Static Web App URL
-az staticwebapp show --name "cafe-dist-production-web" --resource-group "coffee-distribution-rg" --query "defaultHostname" -o tsv
-
-# Stream Function App logs
-az functionapp log tail --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg"
-
-# Delete everything and start over
-az group delete --name "coffee-distribution-rg" --yes --no-wait
+# Type check frontend
+cd web && npm run typecheck
 ```
+
+### Frontend Routes
+
+| URL | Page | Access |
+|-----|------|--------|
+| `/login` | Landing page (choose role) | Public |
+| `/login/seller` | Seller login | Public |
+| `/login/admin` | Admin login | Public |
+| `/register/seller` | Seller registration | Public |
+| `/dashboard` | Seller dashboard | Seller |
+| `/admin` | Admin dashboard | Admin |
+| `/admin/inventory` | Inventory management | Admin |
+| `/admin/sales` | Sales list | Admin |
+| `/admin/routes` | Routes management | Admin |
+| `/admin/complaints` | Complaints management | Admin |
+| `/admin/sellers` | Seller management | Admin |
 
 ---
 

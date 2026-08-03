@@ -12,7 +12,7 @@ interface User {
 interface AuthContextType {
   user: User | null
   loading: boolean
-  login: (email: string) => Promise<void>
+  login: (email: string, password: string) => Promise<void>
   logout: () => void
   getAccessToken: () => Promise<string | null>
 }
@@ -37,11 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false)
   }, [])
 
-  const login = async (email: string) => {
+  const login = async (email: string, password: string) => {
     const res = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, password }),
     })
 
     if (!res.ok) {
@@ -56,10 +56,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = () => {
+    const storedUser = localStorage.getItem('auth_user')
+    const role = storedUser ? JSON.parse(storedUser).role : null
     localStorage.removeItem('auth_token')
     localStorage.removeItem('auth_user')
     setUser(null)
-    window.location.href = '/login'
+    window.location.href = role === 'admin' ? '/login/admin' : '/login/seller'
   }
 
   const getAccessToken = async (): Promise<string | null> => {

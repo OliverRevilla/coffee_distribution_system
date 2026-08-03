@@ -3,16 +3,34 @@ import json
 import logging
 import uuid
 import hashlib
+import hmac
 import time
 import base64
+import secrets
 from functools import wraps
 from typing import Optional
-import azure.functions as func
 
 
 logger = logging.getLogger(__name__)
 
 _SECRET_KEY = os.environ.get("AUTH_SECRET_KEY", "dev-secret-change-in-production")
+
+
+def hash_password(password: str) -> str:
+    """Hash a password using PBKDF2-SHA256 with a random salt."""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+    return f"{salt}${dk.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verify a password against a stored PBKDF2-SHA256 hash."""
+    try:
+        salt, expected_hex = stored_hash.split("$", 1)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+        return hmac.compare_digest(dk.hex(), expected_hex)
+    except Exception:
+        return False
 
 
 def create_token(user_id: int, email: str, role: str, name: str) -> str:
@@ -47,63 +65,3 @@ def verify_token(token: str) -> Optional[dict]:
         return payload
     except Exception:
         return None
-
-
-def get_user_from_request(req: func.HttpRequest) -> Optional[dict]:
-    """
-    Extract user from Bearer token.
-    Returns dict with user_id, email, role, name or None if not authenticated.
-    """
-    auth_header = req.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-
-    token = auth_header[7:]
-    payload = verify_token(token)
-    if not payload:
-        return None
-
-    return {
-        "user_id": str(payload.get("sub", "")),
-        "email": payload.get("email", ""),
-        "role": payload.get("role", "seller"),
-        "name": payload.get("name", "")
-    }
-
-
-def require_auth(func):
-    """Decorator to require authentication on Azure Functions."""
-    @wraps(func)
-    def wrapper(req: func.HttpRequest) -> func.HttpResponse:
-        user = get_user_from_request(req)
-        if not user:
-            return func.HttpResponse(
-                json.dumps({"error": "Unauthorized"}),
-                status_code=401,
-                mimetype="application/json"
-            )
-        req.route_data["user"] = user
-        return func(req)
-    return wrapper
-
-
-def require_admin(func):
-    """Decorator to require admin role."""
-    @wraps(func)
-    def wrapper(req: func.HttpRequest) -> func.HttpResponse:
-        user = get_user_from_request(req)
-        if not user:
-            return func.HttpResponse(
-                json.dumps({"error": "Unauthorized"}),
-                status_code=401,
-                mimetype="application/json"
-            )
-        if user.get("role") != "admin":
-            return func.HttpResponse(
-                json.dumps({"error": "Forbidden: admin role required"}),
-                status_code=403,
-                mimetype="application/json"
-            )
-        req.route_data["user"] = user
-        return func(req)
-    return wrapper
