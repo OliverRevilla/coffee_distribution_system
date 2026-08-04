@@ -244,10 +244,39 @@ az group delete --name "coffee-distribution-rg" --yes --no-wait
 | Resource | Monthly Cost |
 |----------|--------------|
 | PostgreSQL (Burstable B1ms) | ~$12 |
-| App Service (Basic B1) | ~$13 |
+| App Service (Consumption Y1) | ~$0-5 |
 | Static Web App (Standard) | ~$9 |
 | Azure Maps (Gen2) | Pay per use (free tier available) |
 | Storage Account | ~$1 |
 | Key Vault | ~$0.03/10K operations |
 | Application Insights | ~$0 (free tier) |
-| **Total** | **~$35-36/month** |
+| **Total** | **~$22-27/month** |
+
+### Cost Optimization: PostgreSQL Auto-Pause
+
+When not actively using the database, enable auto-pause to reduce PostgreSQL cost from ~$12 to ~$1.50/month (storage only):
+
+```bash
+# Enable auto-pause (server stops after idle period)
+az postgres flexible-server update \
+  --resource-group "coffee-distribution-rg" \
+  --name "cafedistproductionpg" \
+  --standby-mode Enabled
+
+# Resume when needed (takes ~30-60 seconds)
+az postgres flexible-server start \
+  --resource-group "coffee-distribution-rg" \
+  --name "cafedistproductionpg"
+```
+
+### Stop/Start App Service (Consumption Plan)
+
+The Consumption plan charges only when the app handles requests. It auto-stops after ~20 minutes of inactivity. To manually control:
+
+```bash
+# Stop App Service (no charges while stopped)
+az webapp stop --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg"
+
+# Start App Service
+az webapp start --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg"
+```
