@@ -24,6 +24,14 @@ jobs:
           publish-profile: ${{ secrets.AZURE_PROD_PUBLISH_PROFILE }}
           package: api/
 
+      # ─── Run Database Schema ─────────────────────────────
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply schema to production database
+        env:
+          DATABASE_URL: ${{ secrets.AZURE_DATABASE_URL }}
+        run: psql "$DATABASE_URL" -f infrastructure/schema.sql
+
       # ─── Deploy Static Web App ──────────────────────────
       - uses: actions/setup-node@v4
         with:

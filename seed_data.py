@@ -124,31 +124,106 @@ def main():
         )
         print(f"  OK    inventory for variant {vid}")
 
+    # ── Products (admin catalog) ──
+    products_data = [
+        ("Cafe de Especialidad", "Cafe de especialidad, origen unico, tueste artesanal", "250gr", 12.00, "A"),
+        ("Cafe de Especialidad", "Cafe de especialidad, origen unico, tueste artesanal", "1kg", 40.00, "A"),
+        ("Cafe Gourmet", "Cafe gourmet molido, aroma intenso y sabor equilibrado", "250gr", 10.00, "A"),
+        ("Cafe Gourmet", "Cafe gourmet molido, aroma intenso y sabor equilibrado", "1kg", 35.00, "A"),
+        ("Cafe Extra Molido", "Cafe extra molido de calidad superior", "250gr", 8.00, "B"),
+        ("Cafe Extra Molido", "Cafe extra molido de calidad superior", "1kg", 28.00, "B"),
+        ("Cafe a Granel", "Cafe a granel, por kilogramo", "1kg", 6.50, "C"),
+        ("Cacao en Polvo", "Cacao en polvo puro, ideal para bebidas y reposteria", "250gr", 7.00, "B"),
+    ]
+
+    product_ids = {}
+    for name, desc, pres, price, category in products_data:
+        key = f"{name}_{pres}"
+        cursor.execute("SELECT id FROM distribution.products WHERE name = %s AND presentation = %s", (name, pres))
+        existing = cursor.fetchone()
+        if existing:
+            product_ids[key] = existing[0]
+            print(f"  SKIP  product '{name} {pres}' (already exists)")
+        else:
+            cursor.execute(
+                """INSERT INTO distribution.products (name, description, presentation, recommended_price, category)
+                   VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                (name, desc, pres, price, category)
+            )
+            pid = cursor.fetchone()[0]
+            product_ids[key] = pid
+            print(f"  OK    product '{name} {pres}' (id={pid}, rec=${price})")
+
+    # ── Seller Products (assign products to seller with markup) ──
+    seller_product_prices = [
+        ("Cafe de Especialidad_250gr", 15.00),
+        ("Cafe de Especialidad_1kg", 50.00),
+        ("Cafe Gourmet_250gr", 13.00),
+        ("Cafe Gourmet_1kg", 45.00),
+        ("Cafe Extra Molido_250gr", 11.00),
+        ("Cafe Extra Molido_1kg", 36.00),
+        ("Cafe a Granel_1kg", 9.00),
+        ("Cacao en Polvo_250gr", 10.00),
+    ]
+
+    for key, real_price in seller_product_prices:
+        pid = product_ids.get(key)
+        if not pid:
+            continue
+        cursor.execute(
+            "SELECT id FROM distribution.seller_products WHERE seller_id = %s AND product_id = %s",
+            (seller_id, pid)
+        )
+        if cursor.fetchone():
+            print(f"  SKIP  seller product '{key}'")
+            continue
+        cursor.execute(
+            """INSERT INTO distribution.seller_products (seller_id, product_id, real_price)
+               VALUES (%s, %s, %s)""",
+            (seller_id, pid, real_price)
+        )
+        rec_price = None
+        for pname, _, ppres, pprice, _ in products_data:
+            if f"{pname}_{ppres}" == key:
+                rec_price = pprice
+                break
+        margin = real_price - (rec_price or 0)
+        print(f"  OK    seller product '{key}' (real=${real_price}, margin=${margin:.2f})")
+
+    # ── Clear existing sales (must be before customers due to FK) ──
+    cursor.execute("DELETE FROM distribution.sales WHERE seller_id = %s", (seller_id,))
+
     # ── Customers ──
     cursor.execute("DELETE FROM distribution.customers WHERE seller_id = %s", (seller_id,))
 
     customers_data = [
-        ("Carlos Mendoza", "Carlitos", "Av. Salaverry 1234, Jesús María", "Jesús María", "999111222", "12345678", "20123456789", "cash"),
-        ("María Fernández", "Mari", "Av. Larco 567, Miraflores", "Miraflores", "999222333", "87654321", "20987654321", "credit"),
-        ("Juan Pérez", "Juancho", "Av. Javier Prado Este 3456, San Isidro", "San Isidro", "999333444", "11223344", "20112233445", "cash"),
-        ("Ana García", None, "Jr. Bolognesi 890, Barranco", "Barranco", "999444555", "44332211", None, "cash"),
-        ("Luis Torres", "Lucho", "Av. Aviación 2345, San Borja", "San Borja", "999555666", "55667788", "20556677889", "credit"),
-        ("Rosa López", "Rosita", "Av. Benavides 4567, Surco", "Surco", "999666777", "99887766", None, "cash"),
-        ("Pedro Ramírez", None, "Av. La Molina 1890, La Molina", "La Molina", "999777888", "66778899", "20667788990", "credit"),
-        ("Lucía Vargas", "Lu", "Jr. San Martín 456, Pueblo Libre", "Pueblo Libre", "999888999", "33445566", None, "cash"),
+        ("Carlos Mendoza", "Carlitos", "Av. Salaverry 1234, Jesús María", "Jesús María", "999111222", "12345678", "20123456789", "cash", 7),
+        ("María Fernández", "Mari", "Av. Larco 567, Miraflores", "Miraflores", "999222333", "87654321", "20987654321", "credit", 14),
+        ("Juan Pérez", "Juancho", "Av. Javier Prado Este 3456, San Isidro", "San Isidro", "999333444", "11223344", "20112233445", "cash", 10),
+        ("Ana García", None, "Jr. Bolognesi 890, Barranco", "Barranco", "999444555", "44332211", None, "cash", 30),
+        ("Luis Torres", "Lucho", "Av. Aviación 2345, San Borja", "San Borja", "999555666", "55667788", "20556677889", "credit", 7),
+        ("Rosa López", "Rosita", "Av. Benavides 4567, Surco", "Surco", "999666777", "99887766", None, "cash", 21),
+        ("Pedro Ramírez", None, "Av. La Molina 1890, La Molina", "La Molina", "999777888", "66778899", "20667788990", "credit", 30),
+        ("Lucía Vargas", "Lu", "Jr. San Martín 456, Pueblo Libre", "Pueblo Libre", "999888999", "33445566", None, "cash", 14),
     ]
 
+    # Build GPS lookup from LIMA_CUSTOMERS by name
+    gps_by_name = {c[0]: (c[2], c[3]) for c in LIMA_CUSTOMERS}
+
     customer_ids = []
-    for name, nick, addr, district, phone, dni, ruc, mode in customers_data:
+    customer_gps = {}
+    for name, nick, addr, district, phone, dni, ruc, mode, cycle_days in customers_data:
         cursor.execute(
             """INSERT INTO distribution.customers
-               (seller_id, name, nickname, address, district, phone, dni, ruc, payment_mode)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (seller_id, name, nick, addr, district, phone, dni, ruc, mode)
+               (seller_id, name, nickname, address, district, phone, dni, ruc, payment_mode, cycle_days)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (seller_id, name, nick, addr, district, phone, dni, ruc, mode, cycle_days)
         )
         cid = cursor.fetchone()[0]
         customer_ids.append(cid)
-        print(f"  OK    customer '{name}' (id={cid}, mode={mode})")
+        if name in gps_by_name:
+            customer_gps[cid] = gps_by_name[name]
+        print(f"  OK    customer '{name}' (id={cid}, mode={mode}, cycle={cycle_days}d)")
     print(f"  OK    {len(customer_ids)} customers")
 
     # ── Sales ──
@@ -163,10 +238,6 @@ def main():
         None,
     ]
 
-    # Clear existing sales for clean test data
-    cursor.execute("DELETE FROM distribution.sales WHERE seller_id = %s", (seller_id,))
-
-    # Generate 40 sales spread across 30 days with varied quantities
     for i in range(40):
         cust_id = random.choice(customer_ids)
         vid = random.choice(variant_ids)
@@ -191,14 +262,17 @@ def main():
 
         remanent = total - partial
 
+        gps_lat, gps_lng = customer_gps.get(cust_id, (-12.05, -77.03))
+
         cursor.execute(
             """INSERT INTO distribution.sales
                (seller_id, customer_id, variant_id, presentation, quantity, unit_price, total_amount,
-                sale_date, payment_date, expected_payment_date, partial_payments, remanent_payment, notes)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                sale_date, payment_date, expected_payment_date, partial_payments, remanent_payment, notes,
+                gps_latitude, gps_longitude)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (seller_id, cust_id, vid, pres, qty, price, total,
              sale_date, pay_date, expected_date, partial, remanent,
-             random.choice(notes_options))
+             random.choice(notes_options), gps_lat, gps_lng)
         )
     print(f"  OK    40 sales records")
 

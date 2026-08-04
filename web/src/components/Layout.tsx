@@ -52,15 +52,39 @@ export default function Layout() {
                       Customers
                     </Link>
                     <Link
+                      to="/tracking"
+                      className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    >
+                      Tracking
+                    </Link>
+                    <Link
+                      to="/products"
+                      className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    >
+                      Products
+                    </Link>
+                    <Link
                       to="/sales"
                       className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
                     >
                       Sales
                     </Link>
+                    <Link
+                      to="/profile"
+                      className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    >
+                      Profile
+                    </Link>
                   </>
                 )}
                 {isAdmin && (
                   <>
+                    <Link
+                      to="/admin/products"
+                      className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    >
+                      Products
+                    </Link>
                     <Link
                       to="/admin/inventory"
                       className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
@@ -91,14 +115,23 @@ export default function Layout() {
                     >
                       Sellers
                     </Link>
+                    <Link
+                      to="/profile"
+                      className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    >
+                      Profile
+                    </Link>
                   </>
                 )}
               </nav>
             </div>
             <div className="flex items-center">
-              <span className="text-sm text-gray-600 mr-4">
+              <Link
+                to="/profile"
+                className="text-sm text-gray-600 hover:text-amber-600 mr-4 cursor-pointer"
+              >
                 {user.name} ({user.role})
-              </span>
+              </Link>
               <button
                 onClick={logout}
                 className="px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-amber-600 hover:bg-amber-700"

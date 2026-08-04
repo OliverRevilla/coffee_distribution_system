@@ -57,7 +57,6 @@ az group create \
 ```bash
 az ad sp create-for-rbac \
   --name "coffee-dist-cicd" \
-  --sdk-auth \
   --role Contributor \
   --scopes /subscriptions/$(az account show --query id -o tsv)
 ```
@@ -141,7 +140,20 @@ az webapp deployment list-publishing-profiles \
 
 ---
 
-## Step 10: Configure GitHub Secrets
+## Step 10: Get DATABASE_URL
+
+```bash
+az webapp config appsettings list \
+  --name cafe-dist-production-api \
+  --resource-group coffee-distribution-rg \
+  --query "[?name=='DATABASE_URL'].value" -o tsv
+```
+
+**Copy the entire output.**
+
+---
+
+## Step 11: Configure GitHub Secrets
 
 Go to **GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret**
 
@@ -151,6 +163,7 @@ Go to **GitHub → Repository → Settings → Secrets and variables → Actions
 |-------------|-------|-----------------|
 | `AZURE_PROD_PUBLISH_PROFILE` | XML publish profile | Step 8 — `az webapp deployment list-publishing-profiles --xml` |
 | `AZURE_PROD_STATIC_WEB_APPS_TOKEN` | Deployment token | Step 9 — Azure Portal → Static Web App → Manage deployment tokens |
+| `AZURE_DATABASE_URL` | PostgreSQL connection string | Step 10 — `az webapp config appsettings list` |
 
 ### How to create a secret
 
@@ -161,7 +174,7 @@ Go to **GitHub → Repository → Settings → Secrets and variables → Actions
 
 ---
 
-## Step 11: Push to GitHub
+## Step 12: Push to GitHub
 
 ```bash
 git add .
@@ -175,7 +188,7 @@ The CD pipeline will automatically deploy to Azure.
 
 ## CI/CD Workflow
 
-### CI Pipeline (runs on every push)
+### CI Pipeline (runs on every push and PR)
 
 | Job | What it does |
 |-----|-------------|
@@ -189,8 +202,18 @@ The CD pipeline will automatically deploy to Azure.
 | Step | What it does |
 |------|-------------|
 | Deploy API | Deploys Flask app to Azure App Service |
-| Deploy Web | Builds and deploys React app to Static Web Apps |
-| Health Check | Verifies API is responding |
+| Run Database Schema | Installs psql client, retrieves DATABASE_URL from App Service, runs `schema.sql` (idempotent — safe to run every deploy) |
+| Deploy Web | Builds React app (with `VITE_API_BASE_URL`) and deploys to Static Web Apps |
+| Health Check | Verifies API is responding after 30s (handles Consumption plan cold start) |
+
+### CD Pipeline Secrets Flow
+
+```
+AZURE_PROD_PUBLISH_PROFILE  →  Deploy Flask API to App Service
+AZURE_DATABASE_URL          →  Run schema.sql against PostgreSQL
+VITE_API_BASE_URL           →  Hardcoded in cd.yml, baked into React build
+AZURE_PROD_STATIC_WEB_APPS_TOKEN  →  Deploy React app to Static Web Apps
+```
 
 ---
 
@@ -216,6 +239,19 @@ Try a different region:
 az account list-locations --output table
 ```
 
+### API Connection Refused (Production)
+
+The API runs on Azure **Consumption plan (Y1)**, which auto-stops after ~20 minutes of inactivity. The first request after idle takes **30-60 seconds** for cold start. The CD pipeline waits 30 seconds before health check — if it fails, the API is likely still starting.
+
+### Frontend Shows Localhost Errors
+
+If the production frontend shows `http://localhost:7071` errors, the build was done without `VITE_API_BASE_URL`. The CD pipeline sets this automatically, but manual builds must include it:
+
+```bash
+cd web
+VITE_API_BASE_URL=https://cafe-dist-production-api.azurewebsites.net/api npm run build
+```
+
 ---
 
 ## Useful Commands
@@ -232,6 +268,9 @@ az staticwebapp show --name "cafe-dist-production-web" --resource-group "coffee-
 
 # Stream App Service logs
 az webapp log tail --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg"
+
+# Run schema manually
+psql "$DATABASE_URL" -f infrastructure/schema.sql
 
 # Delete everything and start over
 az group delete --name "coffee-distribution-rg" --yes --no-wait

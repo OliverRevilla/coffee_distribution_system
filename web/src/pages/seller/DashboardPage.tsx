@@ -2,9 +2,12 @@ import { useEffect, useState, useMemo } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { routesApi, salesApi } from '../../services/api'
 import {
-  LineChart, Line, BarChart, Bar,
+  LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
+import DistrictBubblesMap from '../../components/DistrictBubblesMap'
+
+const COLORS = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444']
 
 export default function DashboardPage() {
   const { user } = useAuth()
@@ -63,6 +66,32 @@ export default function DashboardPage() {
     return Array.from(map.entries()).map(([name, data]) => ({ name, ...data }))
   }, [sales])
 
+  const topClients = useMemo(() => {
+    const map = new Map<string, { name: string; total: number; count: number }>()
+    sales.forEach((s) => {
+      const name = s.customer_name || 'Unknown'
+      const existing = map.get(name) || { name, total: 0, count: 0 }
+      existing.total += Number(s.total_amount || 0)
+      existing.count += 1
+      map.set(name, existing)
+    })
+    return Array.from(map.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5)
+  }, [sales])
+
+  const salesByDistrict = useMemo(() => {
+    const map = new Map<string, { district: string; count: number; revenue: number }>()
+    sales.forEach((s) => {
+      const district = s.customer_district || 'Unknown'
+      const existing = map.get(district) || { district, count: 0, revenue: 0 }
+      existing.count += 1
+      existing.revenue += Number(s.total_amount || 0)
+      map.set(district, existing)
+    })
+    return Array.from(map.values()).sort((a, b) => b.count - a.count)
+  }, [sales])
+
   if (loading) {
     return <div className="text-center py-8">Loading...</div>
   }
@@ -95,15 +124,14 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Charts */}
+      {/* Row 1: Sales Trend + Sales by Product */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Sales Trend */}
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Sales Trend</h2>
           {salesByDate.length === 0 ? (
             <p className="text-gray-500">No sales data yet.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={280}>
               <LineChart data={salesByDate}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
@@ -116,22 +144,59 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Sales by Product */}
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Sales by Product</h2>
           {salesByVariant.length === 0 ? (
             <p className="text-gray-500">No sales data yet.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={280}>
               <BarChart data={salesByVariant}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 12 }} />
                 <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, 'Revenue']} />
                 <Legend />
-                <Bar dataKey="revenue" name="Revenue ($)" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="revenue" name="Revenue ($)" radius={[4, 4, 0, 0]}>
+                  {salesByVariant.map((_: any, i: number) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Row 2: Top 5 Clients + District Bubbles */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Top 5 Clients</h2>
+          {topClients.length === 0 ? (
+            <p className="text-gray-500">No sales data yet.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={topClients}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, 'Total']} />
+                <Legend />
+                <Bar dataKey="total" name="Total Revenue" radius={[4, 4, 0, 0]}>
+                  {topClients.map((_: any, i: number) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Sales by District</h2>
+          {salesByDistrict.length === 0 ? (
+            <p className="text-gray-500">No sales data yet.</p>
+          ) : (
+            <DistrictBubblesMap districts={salesByDistrict} />
           )}
         </div>
       </div>

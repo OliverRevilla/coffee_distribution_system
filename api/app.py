@@ -161,6 +161,9 @@ def register_seller():
     email = body.get("email", "").strip().lower()
     password = body.get("password", "")
     full_name = body.get("full_name", "").strip()
+    dni = body.get("dni", "").strip() or None
+    phone = body.get("phone", "").strip() or None
+    residency = body.get("residency", "").strip() or None
 
     if not email:
         return jsonify({"error": "Email is required"}), 400
@@ -178,10 +181,11 @@ def register_seller():
 
     password_hash = hash_password(password)
     cursor.execute(
-        """INSERT INTO distribution.users (email, full_name, password_hash, role, status, azure_b2c_id)
-           VALUES (%s, %s, %s, 'seller', 'active', %s)
+        """INSERT INTO distribution.users
+           (email, full_name, password_hash, role, status, dni, phone, residency, azure_b2c_id)
+           VALUES (%s, %s, %s, 'seller', 'active', %s, %s, %s, %s)
            RETURNING id""",
-        (email, full_name, password_hash, email)
+        (email, full_name, password_hash, dni, phone, residency, email)
     )
     new_id = cursor.fetchone()[0]
     conn.commit()
@@ -197,6 +201,9 @@ def register():
     password = body.get("password", "")
     full_name = body.get("full_name", "").strip()
     role = body.get("role", "seller")
+    dni = body.get("dni", "").strip() or None
+    phone = body.get("phone", "").strip() or None
+    residency = body.get("residency", "").strip() or None
 
     if not email:
         return jsonify({"error": "Email is required"}), 400
@@ -216,15 +223,95 @@ def register():
 
     password_hash = hash_password(password)
     cursor.execute(
-        """INSERT INTO distribution.users (email, full_name, password_hash, role, status, azure_b2c_id)
-           VALUES (%s, %s, %s, %s, 'active', %s)
+        """INSERT INTO distribution.users
+           (email, full_name, password_hash, role, status, dni, phone, residency, azure_b2c_id)
+           VALUES (%s, %s, %s, %s, 'active', %s, %s, %s, %s)
            RETURNING id""",
-        (email, full_name, password_hash, role, email)
+        (email, full_name, password_hash, role, dni, phone, residency, email)
     )
     new_id = cursor.fetchone()[0]
     conn.commit()
 
     return jsonify({"id": new_id, "message": "User registered successfully"}), 201
+
+
+# ──────────────────────────────────────────────
+# Profile routes
+# ──────────────────────────────────────────────
+
+@app.route("/api/profile", methods=["GET"])
+@require_auth
+def get_profile():
+    user = request.user
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, email, full_name, role, status, dni, phone, residency, created_at
+        FROM distribution.users WHERE id = %s
+    """, (user.get("user_id"),))
+    columns = [desc[0] for desc in cursor.description]
+    row = cursor.fetchone()
+    close_connection(conn)
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+    profile = dict(zip(columns, row))
+    if profile.get("created_at"):
+        profile["created_at"] = profile["created_at"].isoformat()
+    return jsonify(profile)
+
+
+@app.route("/api/profile", methods=["PUT"])
+@require_auth
+def update_profile():
+    user = request.user
+    body = request.get_json()
+    full_name = body.get("full_name", "").strip()
+    dni = body.get("dni", "").strip() or None
+    phone = body.get("phone", "").strip() or None
+    residency = body.get("residency", "").strip() or None
+
+    if not full_name:
+        return jsonify({"error": "Full name is required"}), 400
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE distribution.users
+        SET full_name = %s, dni = %s, phone = %s, residency = %s
+        WHERE id = %s
+    """, (full_name, dni, phone, residency, user.get("user_id")))
+    conn.commit()
+    close_connection(conn)
+    return jsonify({"message": "Profile updated"})
+
+
+@app.route("/api/profile/password", methods=["PUT"])
+@require_auth
+def change_password():
+    user = request.user
+    body = request.get_json()
+    current_password = body.get("current_password", "")
+    new_password = body.get("new_password", "")
+
+    if not current_password:
+        return jsonify({"error": "Current password is required"}), 400
+    if not new_password or len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters"}), 400
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT password_hash FROM distribution.users WHERE id = %s", (user.get("user_id"),))
+    row = cursor.fetchone()
+    if not row or not verify_password(current_password, row[0]):
+        close_connection(conn)
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    new_hash = hash_password(new_password)
+    cursor.execute("UPDATE distribution.users SET password_hash = %s WHERE id = %s",
+                   (new_hash, user.get("user_id")))
+    conn.commit()
+    close_connection(conn)
+    return jsonify({"message": "Password changed successfully"})
 
 
 # ──────────────────────────────────────────────
@@ -237,7 +324,7 @@ def list_sellers():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, email, full_name, role, status, azure_b2c_id, created_at
+        SELECT id, email, full_name, role, status, dni, phone, residency, azure_b2c_id, created_at
         FROM distribution.users
         WHERE role = 'seller'
         ORDER BY full_name
@@ -254,13 +341,16 @@ def list_sellers():
 @require_admin
 def create_seller():
     body = request.get_json()
+    dni = body.get("dni", "").strip() or None
+    phone = body.get("phone", "").strip() or None
+    residency = body.get("residency", "").strip() or None
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO distribution.users (email, full_name, role, status, azure_b2c_id)
-        VALUES (%s, %s, 'seller', 'active', %s)
+        INSERT INTO distribution.users (email, full_name, role, status, dni, phone, residency, azure_b2c_id)
+        VALUES (%s, %s, 'seller', 'active', %s, %s, %s, %s)
         RETURNING id
-    """, (body["email"], body["full_name"], body.get("azure_b2c_id") or body["email"]))
+    """, (body["email"], body["full_name"], dni, phone, residency, body.get("azure_b2c_id") or body["email"]))
     new_id = cursor.fetchone()[0]
     conn.commit()
     return jsonify({"id": new_id, "message": "Seller created"}), 201
@@ -270,13 +360,16 @@ def create_seller():
 @require_admin
 def update_seller(seller_id):
     body = request.get_json()
+    dni = body.get("dni", "").strip() or None
+    phone = body.get("phone", "").strip() or None
+    residency = body.get("residency", "").strip() or None
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE distribution.users
-        SET email = %s, full_name = %s
+        SET email = %s, full_name = %s, dni = %s, phone = %s, residency = %s
         WHERE id = %s AND role = 'seller'
-    """, (body.get("email"), body.get("full_name"), seller_id))
+    """, (body.get("email"), body.get("full_name"), dni, phone, residency, seller_id))
     conn.commit()
     if cursor.rowcount == 0:
         return jsonify({"error": "Seller not found"}), 404
@@ -320,7 +413,7 @@ def list_customers():
         cursor.execute("""
             SELECT c.id, c.seller_id, u.full_name as seller_name,
                    c.name, c.nickname, c.address, c.district, c.phone,
-                   c.dni, c.ruc, c.payment_mode, c.is_active, c.created_at, c.updated_at
+                   c.dni, c.ruc, c.payment_mode, c.cycle_days, c.is_active, c.created_at, c.updated_at
             FROM distribution.customers c
             JOIN distribution.users u ON c.seller_id = u.id
             WHERE c.is_active = TRUE
@@ -330,7 +423,7 @@ def list_customers():
         cursor.execute("""
             SELECT c.id, c.seller_id, u.full_name as seller_name,
                    c.name, c.nickname, c.address, c.district, c.phone,
-                   c.dni, c.ruc, c.payment_mode, c.is_active, c.created_at, c.updated_at
+                   c.dni, c.ruc, c.payment_mode, c.cycle_days, c.is_active, c.created_at, c.updated_at
             FROM distribution.customers c
             JOIN distribution.users u ON c.seller_id = u.id
             WHERE c.seller_id = %s AND c.is_active = TRUE
@@ -356,7 +449,7 @@ def get_customer(customer_id):
     cursor.execute("""
         SELECT c.id, c.seller_id, u.full_name as seller_name,
                c.name, c.nickname, c.address, c.district, c.phone,
-               c.dni, c.ruc, c.payment_mode, c.is_active, c.created_at, c.updated_at
+               c.dni, c.ruc, c.payment_mode, c.cycle_days, c.is_active, c.created_at, c.updated_at
         FROM distribution.customers c
         JOIN distribution.users u ON c.seller_id = u.id
         WHERE c.id = %s
@@ -386,8 +479,8 @@ def create_customer():
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO distribution.customers
-            (seller_id, name, nickname, address, district, phone, dni, ruc, payment_mode)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (seller_id, name, nickname, address, district, phone, dni, ruc, payment_mode, cycle_days)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """, (
         seller_id,
@@ -399,6 +492,7 @@ def create_customer():
         body.get("dni"),
         body.get("ruc"),
         body.get("payment_mode", "cash"),
+        body.get("cycle_days", 30),
     ))
     new_id = cursor.fetchone()[0]
     conn.commit()
@@ -423,7 +517,7 @@ def update_customer(customer_id):
     cursor.execute("""
         UPDATE distribution.customers
         SET name = %s, nickname = %s, address = %s, district = %s, phone = %s,
-            dni = %s, ruc = %s, payment_mode = %s, updated_at = NOW()
+            dni = %s, ruc = %s, payment_mode = %s, cycle_days = %s, updated_at = NOW()
         WHERE id = %s
     """, (
         body.get("name"),
@@ -434,6 +528,7 @@ def update_customer(customer_id):
         body.get("dni"),
         body.get("ruc"),
         body.get("payment_mode"),
+        body.get("cycle_days", 30),
         customer_id,
     ))
     conn.commit()
@@ -454,7 +549,10 @@ def delete_customer(customer_id):
     if user.get("role") != "admin" and row[0] != user.get("user_id"):
         return jsonify({"error": "Forbidden"}), 403
 
-    cursor.execute("UPDATE distribution.customers SET is_active = FALSE, updated_at = NOW() WHERE id = %s", (customer_id,))
+    cursor.execute(
+        "UPDATE distribution.customers SET is_active = FALSE, updated_at = NOW() WHERE id = %s",
+        (customer_id,),
+    )
     conn.commit()
     return jsonify({"message": "Customer deleted"})
 
@@ -583,6 +681,202 @@ def create_variant():
 
 
 # ──────────────────────────────────────────────
+# Products routes (admin manages catalog)
+# ──────────────────────────────────────────────
+
+@app.route("/api/products", methods=["GET"])
+@require_auth
+def list_products():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, name, description, presentation, recommended_price, category, is_active, created_at
+        FROM distribution.products
+        WHERE is_active = TRUE
+        ORDER BY category, name
+    """)
+    columns = [desc[0] for desc in cursor.description]
+    products = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    for p in products:
+        p["recommended_price"] = float(p["recommended_price"])
+        if p.get("created_at"):
+            p["created_at"] = p["created_at"].isoformat()
+    close_connection(conn)
+    return jsonify({"products": products})
+
+
+@app.route("/api/products", methods=["POST"])
+@require_admin
+def create_product():
+    body = request.get_json()
+    name = body.get("name", "").strip()
+    presentation = body.get("presentation", "").strip()
+    recommended_price = body.get("recommended_price")
+
+    if not name:
+        return jsonify({"error": "Name is required"}), 400
+    if not presentation:
+        return jsonify({"error": "Presentation is required"}), 400
+    if recommended_price is None or float(recommended_price) < 0:
+        return jsonify({"error": "Valid recommended price is required"}), 400
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO distribution.products (name, description, presentation, recommended_price, category)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+    """, (name, body.get("description"), presentation, recommended_price, body.get("category", "C")))
+    new_id = cursor.fetchone()[0]
+    conn.commit()
+    close_connection(conn)
+    return jsonify({"id": new_id, "message": "Product created"}), 201
+
+
+@app.route("/api/products/<int:product_id>", methods=["PUT"])
+@require_admin
+def update_product(product_id):
+    body = request.get_json()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE distribution.products
+        SET name = %s, description = %s, presentation = %s,
+            recommended_price = %s, category = %s
+        WHERE id = %s
+    """, (
+        body.get("name"), body.get("description"), body.get("presentation"),
+        body.get("recommended_price"), body.get("category"), product_id
+    ))
+    conn.commit()
+    if cursor.rowcount == 0:
+        close_connection(conn)
+        return jsonify({"error": "Product not found"}), 404
+    close_connection(conn)
+    return jsonify({"message": "Product updated"})
+
+
+@app.route("/api/products/<int:product_id>", methods=["DELETE"])
+@require_admin
+def delete_product(product_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE distribution.products SET is_active = FALSE WHERE id = %s", (product_id,))
+    conn.commit()
+    if cursor.rowcount == 0:
+        close_connection(conn)
+        return jsonify({"error": "Product not found"}), 404
+    close_connection(conn)
+    return jsonify({"message": "Product deleted"})
+
+
+# ──────────────────────────────────────────────
+# Seller Products routes (seller picks products + sets price)
+# ──────────────────────────────────────────────
+
+@app.route("/api/seller/products", methods=["GET"])
+@require_auth
+def list_seller_products():
+    user = request.user
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT sp.id, sp.product_id, p.name, p.description, p.presentation,
+               p.recommended_price, p.category,
+               sp.real_price, sp.is_active, sp.created_at
+        FROM distribution.seller_products sp
+        JOIN distribution.products p ON sp.product_id = p.id
+        WHERE sp.seller_id = %s AND sp.is_active = TRUE AND p.is_active = TRUE
+        ORDER BY p.category, p.name
+    """, (user.get("user_id"),))
+    columns = [desc[0] for desc in cursor.description]
+    items = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    for item in items:
+        item["recommended_price"] = float(item["recommended_price"])
+        item["real_price"] = float(item["real_price"])
+        if item.get("created_at"):
+            item["created_at"] = item["created_at"].isoformat()
+    close_connection(conn)
+    return jsonify({"seller_products": items})
+
+
+@app.route("/api/seller/products", methods=["POST"])
+@require_auth
+def add_seller_product():
+    user = request.user
+    body = request.get_json()
+    product_id = body.get("product_id")
+    real_price = body.get("real_price")
+
+    if not product_id:
+        return jsonify({"error": "product_id is required"}), 400
+    if real_price is None or float(real_price) < 0:
+        return jsonify({"error": "Valid real_price is required"}), 400
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id FROM distribution.products WHERE id = %s AND is_active = TRUE", (product_id,))
+    if not cursor.fetchone():
+        close_connection(conn)
+        return jsonify({"error": "Product not found"}), 404
+
+    cursor.execute("SELECT id FROM distribution.seller_products WHERE seller_id = %s AND product_id = %s",
+                   (user.get("user_id"), product_id))
+    if cursor.fetchone():
+        close_connection(conn)
+        return jsonify({"error": "Product already in your list"}), 409
+
+    cursor.execute("""
+        INSERT INTO distribution.seller_products (seller_id, product_id, real_price)
+        VALUES (%s, %s, %s)
+        RETURNING id
+    """, (user.get("user_id"), product_id, real_price))
+    new_id = cursor.fetchone()[0]
+    conn.commit()
+    close_connection(conn)
+    return jsonify({"id": new_id, "message": "Product added to your catalog"}), 201
+
+
+@app.route("/api/seller/products/<int:sp_id>", methods=["PUT"])
+@require_auth
+def update_seller_product(sp_id):
+    user = request.user
+    body = request.get_json()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE distribution.seller_products
+        SET real_price = %s
+        WHERE id = %s AND seller_id = %s
+    """, (body.get("real_price"), sp_id, user.get("user_id")))
+    conn.commit()
+    if cursor.rowcount == 0:
+        close_connection(conn)
+        return jsonify({"error": "Not found"}), 404
+    close_connection(conn)
+    return jsonify({"message": "Price updated"})
+
+
+@app.route("/api/seller/products/<int:sp_id>", methods=["DELETE"])
+@require_auth
+def remove_seller_product(sp_id):
+    user = request.user
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE distribution.seller_products SET is_active = FALSE
+        WHERE id = %s AND seller_id = %s
+    """, (sp_id, user.get("user_id")))
+    conn.commit()
+    if cursor.rowcount == 0:
+        close_connection(conn)
+        return jsonify({"error": "Not found"}), 404
+    close_connection(conn)
+    return jsonify({"message": "Product removed from your catalog"})
+
+
+# ──────────────────────────────────────────────
 # Sales routes
 # ──────────────────────────────────────────────
 
@@ -601,7 +895,8 @@ def list_sales():
                    s.variant_id, cv.name as variant_name, cv.sku, cv.category,
                    s.presentation, s.quantity, s.unit_price, s.total_amount,
                    s.sale_date, s.payment_date, s.expected_payment_date,
-                   s.partial_payments, s.remanent_payment, s.notes
+                   s.partial_payments, s.remanent_payment, s.notes,
+                   s.gps_latitude, s.gps_longitude
             FROM distribution.sales s
             JOIN distribution.users u ON s.seller_id = u.id
             JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
@@ -615,7 +910,8 @@ def list_sales():
                    s.variant_id, cv.name as variant_name, cv.sku, cv.category,
                    s.presentation, s.quantity, s.unit_price, s.total_amount,
                    s.sale_date, s.payment_date, s.expected_payment_date,
-                   s.partial_payments, s.remanent_payment, s.notes
+                   s.partial_payments, s.remanent_payment, s.notes,
+                   s.gps_latitude, s.gps_longitude
             FROM distribution.sales s
             JOIN distribution.users u ON s.seller_id = u.id
             JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
@@ -681,7 +977,12 @@ def create_sale():
     new_id = cursor.fetchone()[0]
     conn.commit()
 
-    return jsonify({"id": new_id, "total_amount": total_amount, "remanent_payment": remanent, "message": "Sale registered"}), 201
+    return jsonify({
+        "id": new_id,
+        "total_amount": total_amount,
+        "remanent_payment": remanent,
+        "message": "Sale registered",
+    }), 201
 
 
 @app.route("/api/sales/<int:sale_id>", methods=["GET"])
@@ -742,10 +1043,10 @@ def update_sale(sale_id):
         unit_price = float(variant[0])
         total_amount = unit_price * quantity
     else:
-        existing = cursor.execute(
-            "SELECT unit_price, quantity FROM distribution.sales WHERE id = %s", (sale_id,)
+        cursor.execute(
+            "SELECT unit_price, quantity FROM distribution.sales WHERE id = %s",
+            (sale_id,),
         )
-        cursor.execute("SELECT unit_price, quantity FROM distribution.sales WHERE id = %s", (sale_id,))
         ex = cursor.fetchone()
         unit_price = float(ex[0]) if ex else 0
         quantity = quantity or (ex[1] if ex else 0)
@@ -770,6 +1071,95 @@ def update_sale(sale_id):
     ))
     conn.commit()
     return jsonify({"message": "Sale updated", "total_amount": total_amount, "remanent_payment": remanent})
+
+
+# ──────────────────────────────────────────────
+# Tracking routes
+# ──────────────────────────────────────────────
+
+@app.route("/api/tracking/customers", methods=["GET"])
+@require_auth
+def tracking_customers():
+    user = request.user
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_admin = user.get("role") == "admin"
+
+    if is_admin:
+        cursor.execute("""
+            SELECT c.id, c.seller_id, u.full_name as seller_name,
+                   c.name, c.nickname, c.district, c.phone, c.cycle_days,
+                   ls.last_sale_date, ls.last_sale_amount
+            FROM distribution.customers c
+            JOIN distribution.users u ON c.seller_id = u.id
+            LEFT JOIN LATERAL (
+                SELECT sale_date as last_sale_date, total_amount as last_sale_amount
+                FROM distribution.sales
+                WHERE customer_id = c.id
+                ORDER BY sale_date DESC
+                LIMIT 1
+            ) ls ON TRUE
+            WHERE c.is_active = TRUE
+            ORDER BY c.name
+        """)
+    else:
+        cursor.execute("""
+            SELECT c.id, c.seller_id, u.full_name as seller_name,
+                   c.name, c.nickname, c.district, c.phone, c.cycle_days,
+                   ls.last_sale_date, ls.last_sale_amount
+            FROM distribution.customers c
+            JOIN distribution.users u ON c.seller_id = u.id
+            LEFT JOIN LATERAL (
+                SELECT sale_date as last_sale_date, total_amount as last_sale_amount
+                FROM distribution.sales
+                WHERE customer_id = c.id
+                ORDER BY sale_date DESC
+                LIMIT 1
+            ) ls ON TRUE
+            WHERE c.seller_id = %s AND c.is_active = TRUE
+            ORDER BY c.name
+        """, (user.get("user_id"),))
+
+    columns = [desc[0] for desc in cursor.description]
+    rows = cursor.fetchall()
+    close_connection(conn)
+
+    result = []
+    for row in rows:
+        record = dict(zip(columns, row))
+        cycle = record.get("cycle_days") or 30
+        last_sale = record.get("last_sale_date")
+
+        if last_sale:
+            last_sale_str = last_sale.isoformat() if hasattr(last_sale, 'isoformat') else str(last_sale)
+            from datetime import datetime as dt, timedelta
+            last_dt = last_sale if isinstance(last_sale, dt) else dt.fromisoformat(str(last_sale))
+            next_expected = last_dt + timedelta(days=cycle)
+            days_since = (dt.utcnow() - last_dt.replace(tzinfo=None)).days
+            is_active = days_since <= 90
+        else:
+            last_sale_str = None
+            next_expected = None
+            days_since = None
+            is_active = False
+
+        result.append({
+            "id": record["id"],
+            "seller_id": record["seller_id"],
+            "seller_name": record["seller_name"],
+            "name": record["name"],
+            "nickname": record.get("nickname"),
+            "district": record.get("district"),
+            "phone": record.get("phone"),
+            "cycle_days": cycle,
+            "last_sale_date": last_sale_str,
+            "last_sale_amount": float(record.get("last_sale_amount") or 0),
+            "next_expected_date": next_expected.isoformat() if next_expected else None,
+            "days_since_last_sale": days_since,
+            "status": "active" if is_active else "inactive",
+        })
+
+    return jsonify({"customers": result})
 
 
 # ──────────────────────────────────────────────

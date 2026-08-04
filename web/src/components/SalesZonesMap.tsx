@@ -1,9 +1,13 @@
 import { useEffect, useRef } from 'react'
-import L from 'leaflet'
+import _L from 'leaflet'
+
+const L = _L as any
 
 interface SalesZonesMapProps {
   sales: any[]
 }
+
+const LIMA_CENTER: [number, number] = [-12.05, -77.03]
 
 function aggregateLocations(sales: any[]) {
   const zones = new Map<string, { lat: number; lng: number; count: number; total: number }>()
@@ -13,7 +17,7 @@ function aggregateLocations(sales: any[]) {
     const lng = parseFloat(sale.gps_longitude)
     if (isNaN(lat) || isNaN(lng)) return
 
-    const key = `${lat.toFixed(2)},${lng.toFixed(2)}`
+    const key = `${lat.toFixed(3)},${lng.toFixed(3)}`
     const existing = zones.get(key)
     if (existing) {
       existing.count++
@@ -27,34 +31,34 @@ function aggregateLocations(sales: any[]) {
 }
 
 export default function SalesZonesMap({ sales }: SalesZonesMapProps) {
-  const mapRef = useRef<HTMLDivElement>(null)
-  const mapInstance = useRef<any>(null)
-  const markersRef = useRef<any[]>([])
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<any>(null)
+  const markersRef = useRef<any>(null)
 
   useEffect(() => {
-    if (!mapRef.current || mapInstance.current) return
+    if (!containerRef.current || mapRef.current) return
 
-    const map: L.Map = L.map(mapRef.current).setView([-12.05, -77.03], 12)
-
+    const map = L.map(containerRef.current).setView(LIMA_CENTER, 12)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
     }).addTo(map)
 
-    mapInstance.current = map
+    const markers = L.layerGroup().addTo(map)
+    mapRef.current = map
+    markersRef.current = markers
 
-    setTimeout(() => (map as any).invalidateSize(), 0)
+    setTimeout(() => map.invalidateSize(), 0)
 
     return () => {
       map.remove()
-      mapInstance.current = null
+      mapRef.current = null
+      markersRef.current = null
     }
   }, [])
 
   useEffect(() => {
-    if (!mapInstance.current) return
-
-    markersRef.current.forEach((m) => m.remove())
-    markersRef.current = []
+    if (!markersRef.current) return
+    markersRef.current.clearLayers()
 
     const zones = aggregateLocations(sales)
     const maxCount = Math.max(...zones.map((z) => z.count), 1)
@@ -70,7 +74,7 @@ export default function SalesZonesMap({ sales }: SalesZonesMapProps) {
         weight: 2,
         opacity,
         fillOpacity: opacity,
-      }).addTo(mapInstance.current)
+      })
 
       circle.bindPopup(
         `<div style="text-align:center">
@@ -79,13 +83,13 @@ export default function SalesZonesMap({ sales }: SalesZonesMapProps) {
         </div>`
       )
 
-      markersRef.current.push(circle)
+      markersRef.current!.addLayer(circle)
     })
   }, [sales])
 
   return (
     <div
-      ref={mapRef}
+      ref={containerRef}
       style={{ width: '100%', height: '400px', borderRadius: '8px' }}
     />
   )

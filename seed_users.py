@@ -34,12 +34,18 @@ def main():
             "full_name": "Test Admin",
             "password": "admin123",
             "role": "admin",
+            "dni": "12345678",
+            "phone": "999888777",
+            "residency": "Lima, Lima, Cercado de Lima",
         },
         {
             "email": "seller@test.com",
             "full_name": "Test Seller",
             "password": "seller123",
             "role": "seller",
+            "dni": "87654321",
+            "phone": "999777666",
+            "residency": "Lima, Lima, Miraflores",
         },
     ]
 
@@ -51,10 +57,12 @@ def main():
 
         password_hash = hash_password(user["password"])
         cursor.execute(
-            """INSERT INTO distribution.users (email, full_name, password_hash, role, status, azure_b2c_id)
-               VALUES (%s, %s, %s, %s, 'active', %s)
+            """INSERT INTO distribution.users
+               (email, full_name, password_hash, role, status, dni, phone, residency, azure_b2c_id)
+               VALUES (%s, %s, %s, %s, 'active', %s, %s, %s, %s)
                RETURNING id""",
-            (user["email"], user["full_name"], password_hash, user["role"], user["email"]),
+            (user["email"], user["full_name"], password_hash, user["role"],
+             user["dni"], user["phone"], user["residency"], user["email"]),
         )
         new_id = cursor.fetchone()[0]
         print(f"  OK    {user['email']} (id={new_id}, role={user['role']})")

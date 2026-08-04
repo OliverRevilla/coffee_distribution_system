@@ -14,6 +14,7 @@ interface Customer {
   dni: string | null
   ruc: string | null
   payment_mode: 'cash' | 'credit'
+  cycle_days: number
   is_active: boolean
   created_at: string
 }
@@ -27,6 +28,7 @@ interface CustomerForm {
   dni: string
   ruc: string
   payment_mode: 'cash' | 'credit'
+  cycle_days: number
 }
 
 const emptyForm: CustomerForm = {
@@ -38,6 +40,7 @@ const emptyForm: CustomerForm = {
   dni: '',
   ruc: '',
   payment_mode: 'cash',
+  cycle_days: 30,
 }
 
 export default function CustomersPage() {
@@ -88,6 +91,7 @@ export default function CustomersPage() {
       dni: c.dni || '',
       ruc: c.ruc || '',
       payment_mode: c.payment_mode,
+      cycle_days: c.cycle_days || 30,
     })
     setEditingId(c.id)
     setError('')
@@ -111,6 +115,7 @@ export default function CustomersPage() {
         phone: form.phone || null,
         dni: form.dni || null,
         ruc: form.ruc || null,
+        cycle_days: form.cycle_days || 30,
       }
       if (editingId) {
         await customersApi.update(editingId, payload)
@@ -316,6 +321,19 @@ export default function CustomersPage() {
                     className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Cycle (days)</label>
+                <input
+                  type="number"
+                  name="cycle_days"
+                  value={form.cycle_days}
+                  onChange={handleChange}
+                  min={1}
+                  max={365}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">How often this customer reorders (default: 30 days)</p>
               </div>
               <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                 <button

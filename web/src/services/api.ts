@@ -91,7 +91,32 @@ export const reportsApi = {
   getSalesReport: () => api.get('/reports/sales'),
 }
 
+export const customerTrackingApi = {
+  getTracking: () => api.get('/tracking/customers'),
+}
+
 export const authApi = {
   register: (data: { email: string; password: string; full_name: string; role: string }) =>
     api.post('/auth/register', data),
+}
+
+export const profileApi = {
+  get: () => api.get('/profile'),
+  update: (data: any) => api.put('/profile', data),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    api.put('/profile/password', data),
+}
+
+export const productsApi = {
+  list: () => api.get('/products'),
+  create: (data: any) => api.post('/products', data),
+  update: (id: number, data: any) => api.put(`/products/${id}`, data),
+  delete: (id: number) => api.delete(`/products/${id}`),
+}
+
+export const sellerProductsApi = {
+  list: () => api.get('/seller/products'),
+  add: (data: any) => api.post('/seller/products', data),
+  update: (id: number, data: any) => api.put(`/seller/products/${id}`, data),
+  remove: (id: number) => api.delete(`/seller/products/${id}`),
 }
