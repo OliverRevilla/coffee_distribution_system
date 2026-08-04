@@ -33,6 +33,14 @@ api.interceptors.response.use(
 
 export default api
 
+export const customersApi = {
+  list: () => api.get('/customers'),
+  get: (id: number) => api.get(`/customers/${id}`),
+  create: (data: any) => api.post('/customers', data),
+  update: (id: number, data: any) => api.put(`/customers/${id}`, data),
+  delete: (id: number) => api.delete(`/customers/${id}`),
+}
+
 export const inventoryApi = {
   list: () => api.get('/inventory'),
   get: (id: number) => api.get(`/inventory/${id}`),
@@ -49,6 +57,7 @@ export const salesApi = {
   list: () => api.get('/sales'),
   create: (data: any) => api.post('/sales', data),
   get: (id: number) => api.get(`/sales/${id}`),
+  update: (id: number, data: any) => api.put(`/sales/${id}`, data),
 }
 
 export const routesApi = {

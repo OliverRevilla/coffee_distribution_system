@@ -19,7 +19,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {
+    "origins": [
+        "https://cafe-dist-production-web.azurestaticapps.net",
+        "http://localhost:5173",
+    ],
+    "supports_credentials": True,
+    "allow_headers": ["Content-Type", "Authorization"],
+    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+}})
 
 
 @app.teardown_appcontext
@@ -297,6 +305,161 @@ def update_seller_status(seller_id):
 
 
 # ──────────────────────────────────────────────
+# Customers routes
+# ──────────────────────────────────────────────
+
+@app.route("/api/customers", methods=["GET"])
+@require_auth
+def list_customers():
+    user = request.user
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_admin = user.get("role") == "admin"
+
+    if is_admin:
+        cursor.execute("""
+            SELECT c.id, c.seller_id, u.full_name as seller_name,
+                   c.name, c.nickname, c.address, c.district, c.phone,
+                   c.dni, c.ruc, c.payment_mode, c.is_active, c.created_at, c.updated_at
+            FROM distribution.customers c
+            JOIN distribution.users u ON c.seller_id = u.id
+            WHERE c.is_active = TRUE
+            ORDER BY c.name
+        """)
+    else:
+        cursor.execute("""
+            SELECT c.id, c.seller_id, u.full_name as seller_name,
+                   c.name, c.nickname, c.address, c.district, c.phone,
+                   c.dni, c.ruc, c.payment_mode, c.is_active, c.created_at, c.updated_at
+            FROM distribution.customers c
+            JOIN distribution.users u ON c.seller_id = u.id
+            WHERE c.seller_id = %s AND c.is_active = TRUE
+            ORDER BY c.name
+        """, (user.get("user_id"),))
+
+    columns = [desc[0] for desc in cursor.description]
+    customers = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    for c in customers:
+        if c.get("created_at"):
+            c["created_at"] = c["created_at"].isoformat()
+        if c.get("updated_at"):
+            c["updated_at"] = c["updated_at"].isoformat()
+    return jsonify({"customers": customers})
+
+
+@app.route("/api/customers/<int:customer_id>", methods=["GET"])
+@require_auth
+def get_customer(customer_id):
+    user = request.user
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.id, c.seller_id, u.full_name as seller_name,
+               c.name, c.nickname, c.address, c.district, c.phone,
+               c.dni, c.ruc, c.payment_mode, c.is_active, c.created_at, c.updated_at
+        FROM distribution.customers c
+        JOIN distribution.users u ON c.seller_id = u.id
+        WHERE c.id = %s
+    """, (customer_id,))
+    columns = [desc[0] for desc in cursor.description]
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Customer not found"}), 404
+    customer = dict(zip(columns, row))
+    if user.get("role") != "admin" and customer["seller_id"] != user.get("user_id"):
+        return jsonify({"error": "Forbidden"}), 403
+    if customer.get("created_at"):
+        customer["created_at"] = customer["created_at"].isoformat()
+    if customer.get("updated_at"):
+        customer["updated_at"] = customer["updated_at"].isoformat()
+    return jsonify(customer)
+
+
+@app.route("/api/customers", methods=["POST"])
+@require_auth
+def create_customer():
+    user = request.user
+    body = request.get_json()
+    seller_id = user.get("user_id")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO distribution.customers
+            (seller_id, name, nickname, address, district, phone, dni, ruc, payment_mode)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """, (
+        seller_id,
+        body["name"],
+        body.get("nickname"),
+        body.get("address"),
+        body.get("district"),
+        body.get("phone"),
+        body.get("dni"),
+        body.get("ruc"),
+        body.get("payment_mode", "cash"),
+    ))
+    new_id = cursor.fetchone()[0]
+    conn.commit()
+    return jsonify({"id": new_id, "message": "Customer created"}), 201
+
+
+@app.route("/api/customers/<int:customer_id>", methods=["PUT"])
+@require_auth
+def update_customer(customer_id):
+    user = request.user
+    body = request.get_json()
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT seller_id FROM distribution.customers WHERE id = %s", (customer_id,))
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Customer not found"}), 404
+    if user.get("role") != "admin" and row[0] != user.get("user_id"):
+        return jsonify({"error": "Forbidden"}), 403
+
+    cursor.execute("""
+        UPDATE distribution.customers
+        SET name = %s, nickname = %s, address = %s, district = %s, phone = %s,
+            dni = %s, ruc = %s, payment_mode = %s, updated_at = NOW()
+        WHERE id = %s
+    """, (
+        body.get("name"),
+        body.get("nickname"),
+        body.get("address"),
+        body.get("district"),
+        body.get("phone"),
+        body.get("dni"),
+        body.get("ruc"),
+        body.get("payment_mode"),
+        customer_id,
+    ))
+    conn.commit()
+    return jsonify({"message": "Customer updated"})
+
+
+@app.route("/api/customers/<int:customer_id>", methods=["DELETE"])
+@require_auth
+def delete_customer(customer_id):
+    user = request.user
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT seller_id FROM distribution.customers WHERE id = %s", (customer_id,))
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Customer not found"}), 404
+    if user.get("role") != "admin" and row[0] != user.get("user_id"):
+        return jsonify({"error": "Forbidden"}), 403
+
+    cursor.execute("UPDATE distribution.customers SET is_active = FALSE, updated_at = NOW() WHERE id = %s", (customer_id,))
+    conn.commit()
+    return jsonify({"message": "Customer deleted"})
+
+
+# ──────────────────────────────────────────────
 # Inventory routes
 # ──────────────────────────────────────────────
 
@@ -434,25 +597,29 @@ def list_sales():
     if is_admin:
         cursor.execute("""
             SELECT s.id, s.seller_id, u.full_name as seller_name,
-                   s.variant_id, cv.name as variant_name, cv.sku,
-                   s.quantity, s.unit_price, s.total_amount,
-                   s.customer_name, s.customer_address,
-                   s.gps_latitude, s.gps_longitude, s.sale_date, s.notes
+                   s.customer_id, c.name as customer_name, c.district as customer_district,
+                   s.variant_id, cv.name as variant_name, cv.sku, cv.category,
+                   s.presentation, s.quantity, s.unit_price, s.total_amount,
+                   s.sale_date, s.payment_date, s.expected_payment_date,
+                   s.partial_payments, s.remanent_payment, s.notes
             FROM distribution.sales s
             JOIN distribution.users u ON s.seller_id = u.id
             JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
+            LEFT JOIN distribution.customers c ON s.customer_id = c.id
             ORDER BY s.sale_date DESC
         """)
     else:
         cursor.execute("""
             SELECT s.id, s.seller_id, u.full_name as seller_name,
-                   s.variant_id, cv.name as variant_name, cv.sku,
-                   s.quantity, s.unit_price, s.total_amount,
-                   s.customer_name, s.customer_address,
-                   s.gps_latitude, s.gps_longitude, s.sale_date, s.notes
+                   s.customer_id, c.name as customer_name, c.district as customer_district,
+                   s.variant_id, cv.name as variant_name, cv.sku, cv.category,
+                   s.presentation, s.quantity, s.unit_price, s.total_amount,
+                   s.sale_date, s.payment_date, s.expected_payment_date,
+                   s.partial_payments, s.remanent_payment, s.notes
             FROM distribution.sales s
             JOIN distribution.users u ON s.seller_id = u.id
             JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
+            LEFT JOIN distribution.customers c ON s.customer_id = c.id
             WHERE s.seller_id = %s
             ORDER BY s.sale_date DESC
         """, (user.get("user_id"),))
@@ -460,8 +627,9 @@ def list_sales():
     columns = [desc[0] for desc in cursor.description]
     sales = [dict(zip(columns, row)) for row in cursor.fetchall()]
     for sale in sales:
-        if sale.get("sale_date"):
-            sale["sale_date"] = sale["sale_date"].isoformat()
+        for field in ("sale_date", "payment_date", "expected_payment_date", "created_at", "updated_at"):
+            if sale.get(field):
+                sale[field] = sale[field].isoformat()
     return jsonify({"sales": sales})
 
 
@@ -474,6 +642,9 @@ def create_sale():
     variant_id = body["variant_id"]
     quantity = body["quantity"]
 
+    if quantity < 1 or quantity > 100:
+        return jsonify({"error": "Quantity must be between 1 and 100"}), 400
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -482,21 +653,35 @@ def create_sale():
     if not variant:
         return jsonify({"error": "Variant not found"}), 404
 
-    unit_price = variant[0]
+    unit_price = float(variant[0])
     total_amount = unit_price * quantity
+    partial = float(body.get("partial_payments", 0) or 0)
+    remanent = total_amount - partial
+    sale_status = "completed" if remanent <= 0 else "pending"
+
+    customer_id = body.get("customer_id")
 
     cursor.execute("""
-        INSERT INTO distribution.sales (seller_id, variant_id, quantity, unit_price, total_amount,
-                         customer_name, customer_address, gps_latitude, gps_longitude, notes)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO distribution.sales
+            (seller_id, customer_id, variant_id, presentation, quantity,
+             unit_price, total_amount, sale_date, payment_date, expected_payment_date,
+             partial_payments, remanent_payment, status, notes)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
-    """, (seller_id, variant_id, quantity, unit_price, total_amount,
-          body.get("customer_name"), body.get("customer_address"),
-          body.get("gps_latitude"), body.get("gps_longitude"), body.get("notes")))
+    """, (
+        seller_id, customer_id, variant_id,
+        body.get("presentation", "granel"), quantity,
+        unit_price, total_amount,
+        body.get("sale_date") or datetime.now(timezone.utc).isoformat(),
+        body.get("payment_date"),
+        body.get("expected_payment_date"),
+        partial, remanent, sale_status,
+        body.get("notes"),
+    ))
     new_id = cursor.fetchone()[0]
     conn.commit()
 
-    return jsonify({"id": new_id, "total_amount": total_amount, "message": "Sale registered"}), 201
+    return jsonify({"id": new_id, "total_amount": total_amount, "remanent_payment": remanent, "message": "Sale registered"}), 201
 
 
 @app.route("/api/sales/<int:sale_id>", methods=["GET"])
@@ -507,13 +692,15 @@ def get_sale(sale_id):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT s.id, s.seller_id, u.full_name as seller_name,
-               s.variant_id, cv.name as variant_name, cv.sku,
-               s.quantity, s.unit_price, s.total_amount,
-               s.customer_name, s.customer_address,
-               s.gps_latitude, s.gps_longitude, s.sale_date, s.notes
+               s.customer_id, c.name as customer_name, c.district as customer_district,
+               s.variant_id, cv.name as variant_name, cv.sku, cv.category,
+               s.presentation, s.quantity, s.unit_price, s.total_amount,
+               s.sale_date, s.payment_date, s.expected_payment_date,
+               s.partial_payments, s.remanent_payment, s.notes
         FROM distribution.sales s
         JOIN distribution.users u ON s.seller_id = u.id
         JOIN distribution.coffee_variants cv ON s.variant_id = cv.id
+        LEFT JOIN distribution.customers c ON s.customer_id = c.id
         WHERE s.id = %s
     """, (sale_id,))
     columns = [desc[0] for desc in cursor.description]
@@ -523,9 +710,66 @@ def get_sale(sale_id):
     sale = dict(zip(columns, row))
     if user.get("role") != "admin" and sale["seller_id"] != user.get("user_id"):
         return jsonify({"error": "Forbidden"}), 403
-    if sale.get("sale_date"):
-        sale["sale_date"] = sale["sale_date"].isoformat()
+    for field in ("sale_date", "payment_date", "expected_payment_date", "created_at", "updated_at"):
+        if sale.get(field):
+            sale[field] = sale[field].isoformat()
     return jsonify(sale)
+
+
+@app.route("/api/sales/<int:sale_id>", methods=["PUT"])
+@require_auth
+def update_sale(sale_id):
+    user = request.user
+    body = request.get_json()
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT seller_id FROM distribution.sales WHERE id = %s", (sale_id,))
+    row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Sale not found"}), 404
+    if user.get("role") != "admin" and row[0] != user.get("user_id"):
+        return jsonify({"error": "Forbidden"}), 403
+
+    variant_id = body.get("variant_id")
+    quantity = body.get("quantity")
+
+    if variant_id and quantity:
+        cursor.execute("SELECT price FROM distribution.coffee_variants WHERE id = %s", (variant_id,))
+        variant = cursor.fetchone()
+        if not variant:
+            return jsonify({"error": "Variant not found"}), 404
+        unit_price = float(variant[0])
+        total_amount = unit_price * quantity
+    else:
+        existing = cursor.execute(
+            "SELECT unit_price, quantity FROM distribution.sales WHERE id = %s", (sale_id,)
+        )
+        cursor.execute("SELECT unit_price, quantity FROM distribution.sales WHERE id = %s", (sale_id,))
+        ex = cursor.fetchone()
+        unit_price = float(ex[0]) if ex else 0
+        quantity = quantity or (ex[1] if ex else 0)
+        total_amount = unit_price * quantity
+
+    partial = float(body.get("partial_payments", 0) or 0)
+    remanent = total_amount - partial
+    sale_status = "completed" if remanent <= 0 else "pending"
+
+    cursor.execute("""
+        UPDATE distribution.sales
+        SET customer_id = %s, variant_id = %s, presentation = %s, quantity = %s,
+            unit_price = %s, total_amount = %s, sale_date = %s, payment_date = %s,
+            expected_payment_date = %s, partial_payments = %s, remanent_payment = %s,
+            status = %s, notes = %s, updated_at = NOW()
+        WHERE id = %s
+    """, (
+        body.get("customer_id"), variant_id, body.get("presentation"), quantity,
+        unit_price, total_amount, body.get("sale_date"), body.get("payment_date"),
+        body.get("expected_payment_date"), partial, remanent, sale_status,
+        body.get("notes"), sale_id,
+    ))
+    conn.commit()
+    return jsonify({"message": "Sale updated", "total_amount": total_amount, "remanent_payment": remanent})
 
 
 # ──────────────────────────────────────────────

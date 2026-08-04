@@ -2,7 +2,7 @@
 CREATE SCHEMA IF NOT EXISTS distribution;
 
 -- Users table
-CREATE TABLE distribution.users (
+CREATE TABLE IF NOT EXISTS distribution.users (
     id              SERIAL PRIMARY KEY,
     email           VARCHAR(256) NOT NULL UNIQUE,
     full_name       VARCHAR(256) NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE distribution.users (
 );
 
 -- Coffee variants
-CREATE TABLE distribution.coffee_variants (
+CREATE TABLE IF NOT EXISTS distribution.coffee_variants (
     id              SERIAL PRIMARY KEY,
     name            VARCHAR(256) NOT NULL,
     description     TEXT,
@@ -27,7 +27,7 @@ CREATE TABLE distribution.coffee_variants (
 );
 
 -- Inventory tracking
-CREATE TABLE distribution.inventory (
+CREATE TABLE IF NOT EXISTS distribution.inventory (
     id                  SERIAL PRIMARY KEY,
     variant_id          INT NOT NULL REFERENCES distribution.coffee_variants(id),
     quantity            INT NOT NULL DEFAULT 0,
@@ -38,23 +38,30 @@ CREATE TABLE distribution.inventory (
 );
 
 -- Sales records
-CREATE TABLE distribution.sales (
-    id              SERIAL PRIMARY KEY,
-    seller_id       INT NOT NULL REFERENCES distribution.users(id),
-    variant_id      INT NOT NULL REFERENCES distribution.coffee_variants(id),
-    quantity        INT NOT NULL,
-    unit_price      DECIMAL(10,2) NOT NULL,
-    total_amount    DECIMAL(10,2) NOT NULL,
-    customer_name   VARCHAR(256),
-    customer_address VARCHAR(512),
-    gps_latitude    DECIMAL(9,6),
-    gps_longitude   DECIMAL(9,6),
-    sale_date       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    notes           TEXT
+CREATE TABLE IF NOT EXISTS distribution.sales (
+    id                      SERIAL PRIMARY KEY,
+    seller_id               INT NOT NULL REFERENCES distribution.users(id),
+    customer_id             INT REFERENCES distribution.customers(id),
+    variant_id              INT NOT NULL REFERENCES distribution.coffee_variants(id),
+    presentation            VARCHAR(20) NOT NULL DEFAULT 'granel'
+                            CHECK (presentation IN ('granel', '250gr', '1kg')),
+    quantity                INT NOT NULL CHECK (quantity BETWEEN 1 AND 100),
+    unit_price              DECIMAL(10,2) NOT NULL,
+    total_amount            DECIMAL(10,2) NOT NULL,
+    sale_date               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    payment_date            TIMESTAMP,
+    expected_payment_date   TIMESTAMP,
+    partial_payments        DECIMAL(10,2) DEFAULT 0,
+    remanent_payment        DECIMAL(10,2) DEFAULT 0,
+    status                  VARCHAR(20) NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'completed')),
+    notes                   TEXT,
+    created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Delivery routes
-CREATE TABLE distribution.routes (
+CREATE TABLE IF NOT EXISTS distribution.routes (
     id                  SERIAL PRIMARY KEY,
     name                VARCHAR(256) NOT NULL,
     description         TEXT,
@@ -66,7 +73,7 @@ CREATE TABLE distribution.routes (
 );
 
 -- Route waypoints (delivery stops)
-CREATE TABLE distribution.route_waypoints (
+CREATE TABLE IF NOT EXISTS distribution.route_waypoints (
     id                  SERIAL PRIMARY KEY,
     route_id            INT NOT NULL REFERENCES distribution.routes(id) ON DELETE CASCADE,
     sequence            INT NOT NULL,
@@ -82,7 +89,7 @@ CREATE TABLE distribution.route_waypoints (
 );
 
 -- GPS location tracking
-CREATE TABLE distribution.gps_locations (
+CREATE TABLE IF NOT EXISTS distribution.gps_locations (
     id          BIGSERIAL PRIMARY KEY,
     seller_id   INT NOT NULL REFERENCES distribution.users(id),
     latitude    DECIMAL(9,6) NOT NULL,
@@ -91,8 +98,26 @@ CREATE TABLE distribution.gps_locations (
     timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Customers
+CREATE TABLE IF NOT EXISTS distribution.customers (
+    id              SERIAL PRIMARY KEY,
+    seller_id       INT NOT NULL REFERENCES distribution.users(id),
+    name            VARCHAR(256) NOT NULL,
+    nickname        VARCHAR(256),
+    address         VARCHAR(512),
+    district        VARCHAR(100),
+    phone           VARCHAR(50),
+    dni             VARCHAR(20),
+    ruc             VARCHAR(20),
+    payment_mode    VARCHAR(10) NOT NULL DEFAULT 'cash'
+                    CHECK (payment_mode IN ('cash', 'credit')),
+    is_active       BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Complaints
-CREATE TABLE distribution.complaints (
+CREATE TABLE IF NOT EXISTS distribution.complaints (
     id              SERIAL PRIMARY KEY,
     seller_id       INT NOT NULL REFERENCES distribution.users(id),
     customer_name   VARCHAR(256),

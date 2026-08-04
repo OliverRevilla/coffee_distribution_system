@@ -6,6 +6,8 @@ import SellerLoginPage from './pages/SellerLoginPage'
 import AdminLoginPage from './pages/AdminLoginPage'
 import SellerRegisterPage from './pages/SellerRegisterPage'
 import DashboardPage from './pages/seller/DashboardPage'
+import CustomersPage from './pages/seller/CustomersPage'
+import SellerSalesPage from './pages/seller/SalesPage'
 import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 import InventoryPage from './pages/admin/InventoryPage'
 import SalesPage from './pages/admin/SalesPage'
@@ -25,6 +27,8 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="customers" element={<CustomersPage />} />
+            <Route path="sales" element={<SellerSalesPage />} />
             <Route path="admin" element={<AdminDashboardPage />} />
             <Route path="admin/inventory" element={<InventoryPage />} />
             <Route path="admin/sales" element={<SalesPage />} />
