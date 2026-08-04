@@ -26,11 +26,13 @@ A distribution management system for a coffee company with multiple sellers and 
 | **Purpose** | Coffee distribution management for sellers and administrators |
 | **Users** | 2 Administrators + up to 20 Sellers |
 | **Access** | Web (React + Vite + TypeScript) from any device |
-| **Tracking** | Real-time GPS tracking for delivery routes |
+| **Tracking** | Real-time GPS tracking for delivery routes, customer reorder cycle tracking |
 | **Backend** | Python Flask API (port 7071) |
 | **Database** | PostgreSQL with `distribution` schema |
 | **Frontend Charts** | Recharts library for analytics |
-| **Maps** | Leaflet with OpenStreetMap for sales zones |
+| **Maps** | Leaflet with OpenStreetMap for sales zones and district bubbles |
+| **Product Catalog** | Admin-managed products with recommended prices, sellers set real prices |
+| **Profile Management** | Sellers manage personal info, residency, and password |
 
 ---
 
@@ -38,8 +40,8 @@ A distribution management system for a coffee company with multiple sellers and 
 
 | Role | Capabilities |
 |------|-------------|
-| **Administrator** | Full CRUD on inventory, sales reports with charts, complaint management, route creation/assignment, seller management, analytics dashboards, sales zones map |
-| **Seller** | View assigned routes, register sales, view own sales history and charts, submit complaints, GPS check-in at delivery points |
+| **Administrator** | Full CRUD on inventory, products catalog (recommended prices), sales reports with charts, complaint management, route creation/assignment, seller management, analytics dashboards, sales zones map, top 10 sales view |
+| **Seller** | View assigned routes, register sales, view own sales history and charts, submit complaints, GPS check-in at delivery points, manage profile, track customer reorder cycles, pick products and set prices, district bubble map |
 
 ---
 
@@ -56,19 +58,23 @@ A distribution management system for a coffee company with multiple sellers and 
 │  │  └─────────────────┘  └──────────────────────────────┘   │   │
 │  │  ┌─────────────────┐  ┌──────────────────────────────┐   │   │
 │  │  │  Seller Register │  │  Admin Dashboard              │   │   │
-│  │  │  /register/seller│  │  - Charts (Recharts)          │   │   │
-│  │  └─────────────────┘  │  - Sales Zones Map (Leaflet)  │   │   │
-│  │                       │  - Reports & Analytics         │   │   │
-│  │  ┌─────────────────┐  └──────────────────────────────┘   │   │
-│  │  │  Seller Dashboard│                                     │   │
+│  │  │  /register/seller│  │  - Sales Trend (line)         │   │   │
+│  │  └─────────────────┘  │  - Revenue by Product (bar)   │   │   │
+│  │                       │  - Top 10 Sales (bar)          │   │   │
+│  │  ┌─────────────────┐  │  - Sales Zones Map (Leaflet)  │   │   │
+│  │  │  Seller Dashboard│  └──────────────────────────────┘   │   │
 │  │  │  - Sales Charts  │  ┌──────────────────────────────┐   │   │
-│  │  │  - Routes        │  │  Admin Pages                  │   │   │
-│  │  └─────────────────┘  │  - Inventory (categories A/B/C)│   │   │
-│  │                       │  - Sales                       │   │   │
-│  │                       │  - Routes                      │   │   │
-│  │                       │  - Complaints                  │   │   │
-│  │                       │  - Sellers                     │   │   │
-│  │                       └──────────────────────────────┘   │   │
+│  │  │  - Top Clients   │  │  Admin Pages                  │   │   │
+│  │  │  - District Map  │  │  - Products (catalog)         │   │   │
+│  │  └─────────────────┘  │  - Inventory (A/B/C)          │   │   │
+│  │                       │  - Sales (filters+pagination)  │   │   │
+│  │  ┌─────────────────┐  │  - Complaints                 │   │   │
+│  │  │  Seller Pages    │  │  - Sellers                    │   │   │
+│  │  │  - Tracking      │  │  - Profile                    │   │   │
+│  │  │  - Products      │  └──────────────────────────────┘   │   │
+│  │  │  - Sales         │                                     │   │
+│  │  │  - Profile       │                                     │   │
+│  │  └─────────────────┘                                     │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ HTTP/REST + Bearer Token
@@ -79,7 +85,7 @@ A distribution management system for a coffee company with multiple sellers and 
 │  │  Python Flask Server (port 7071)                          │   │
 │  │  - Email/Password Authentication                         │   │
 │  │  - HMAC-signed JWT Tokens                                │   │
-│  │  - REST API Endpoints (18 routes)                         │   │
+│  │  - REST API Endpoints (25+ routes)                        │   │
 │  │  - CORS enabled for localhost:5173                        │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └──────────────────────────┬──────────────────────────────────────┘
@@ -89,13 +95,16 @@ A distribution management system for a coffee company with multiple sellers and 
 │                    DATA LAYER                                    │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  PostgreSQL Database (distribution schema)                │   │
-│  │  - Users (admin/seller roles, password_hash)              │   │
-│  │  - Coffee Variants (categories A/B/C, prices)             │   │
-│  │  - Inventory (stock levels, reorder points)               │   │
-│  │  - Sales (40+ records, GPS coordinates)                   │   │
-│  │  - Routes & Waypoints (Lima, Peru locations)              │   │
-│  │  - GPS Locations (real-time tracking)                     │   │
-│  │  - Complaints (open/in-progress/resolved)                 │   │
+│  │  - Users (admin/seller roles, dni, phone, residency)     │   │
+│  │  - Products (admin catalog, recommended prices)          │   │
+│  │  - Seller Products (seller picks, real prices)           │   │
+│  │  - Customers (cycle_days for reorder tracking)           │   │
+│  │  - Coffee Variants (categories A/B/C, prices)            │   │
+│  │  - Inventory (stock levels, reorder points)              │   │
+│  │  - Sales (GPS coordinates, customer_id, presentation)    │   │
+│  │  - Routes & Waypoints (Lima, Peru locations)             │   │
+│  │  - GPS Locations (real-time tracking)                    │   │
+│  │  - Complaints (open/in-progress/resolved)                │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -115,7 +124,7 @@ A distribution management system for a coffee company with multiple sellers and 
 ### Tables
 
 ```sql
--- Users table
+-- Users table (with profile fields)
 CREATE TABLE distribution.users (
     id              SERIAL PRIMARY KEY,
     email           VARCHAR(256) NOT NULL UNIQUE,
@@ -123,6 +132,9 @@ CREATE TABLE distribution.users (
     password_hash   VARCHAR(512),
     role            VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'seller')),
     status          VARCHAR(20) NOT NULL DEFAULT 'active',
+    dni             VARCHAR(20),
+    phone           VARCHAR(50),
+    residency       VARCHAR(256),
     azure_b2c_id    VARCHAR(256) DEFAULT '',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -140,6 +152,48 @@ CREATE TABLE distribution.coffee_variants (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Products catalog (admin manages, sellers pick from)
+CREATE TABLE distribution.products (
+    id                  SERIAL PRIMARY KEY,
+    name                VARCHAR(256) NOT NULL,
+    description         TEXT,
+    presentation        VARCHAR(50) NOT NULL,
+    recommended_price   DECIMAL(10,2) NOT NULL,
+    category            VARCHAR(1) DEFAULT 'C' CHECK (category IN ('A', 'B', 'C')),
+    is_active           BOOLEAN DEFAULT TRUE,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seller product assignments (seller picks products and sets their own price)
+CREATE TABLE distribution.seller_products (
+    id                  SERIAL PRIMARY KEY,
+    seller_id           INT NOT NULL REFERENCES distribution.users(id),
+    product_id          INT NOT NULL REFERENCES distribution.products(id),
+    real_price          DECIMAL(10,2) NOT NULL,
+    is_active           BOOLEAN DEFAULT TRUE,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(seller_id, product_id)
+);
+
+-- Customers (with reorder cycle tracking)
+CREATE TABLE distribution.customers (
+    id              SERIAL PRIMARY KEY,
+    seller_id       INT NOT NULL REFERENCES distribution.users(id),
+    name            VARCHAR(256) NOT NULL,
+    nickname        VARCHAR(256),
+    address         VARCHAR(512),
+    district        VARCHAR(100),
+    phone           VARCHAR(50),
+    dni             VARCHAR(20),
+    ruc             VARCHAR(20),
+    payment_mode    VARCHAR(10) NOT NULL DEFAULT 'cash'
+                    CHECK (payment_mode IN ('cash', 'credit')),
+    cycle_days      INT NOT NULL DEFAULT 30,
+    is_active       BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Inventory tracking
 CREATE TABLE distribution.inventory (
     id                  SERIAL PRIMARY KEY,
@@ -153,18 +207,27 @@ CREATE TABLE distribution.inventory (
 
 -- Sales records
 CREATE TABLE distribution.sales (
-    id              SERIAL PRIMARY KEY,
-    seller_id       INT NOT NULL REFERENCES distribution.users(id),
-    variant_id      INT NOT NULL REFERENCES distribution.coffee_variants(id),
-    quantity        INT NOT NULL,
-    unit_price      DECIMAL(10,2) NOT NULL,
-    total_amount    DECIMAL(10,2) NOT NULL,
-    customer_name   VARCHAR(256),
-    customer_address VARCHAR(512),
-    gps_latitude    DECIMAL(9,6),
-    gps_longitude   DECIMAL(9,6),
-    sale_date       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    notes           TEXT
+    id                      SERIAL PRIMARY KEY,
+    seller_id               INT NOT NULL REFERENCES distribution.users(id),
+    customer_id             INT REFERENCES distribution.customers(id),
+    variant_id              INT NOT NULL REFERENCES distribution.coffee_variants(id),
+    presentation            VARCHAR(20) NOT NULL DEFAULT 'granel'
+                            CHECK (presentation IN ('granel', '250gr', '1kg')),
+    quantity                INT NOT NULL CHECK (quantity BETWEEN 1 AND 100),
+    unit_price              DECIMAL(10,2) NOT NULL,
+    total_amount            DECIMAL(10,2) NOT NULL,
+    sale_date               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    payment_date            TIMESTAMP,
+    expected_payment_date   TIMESTAMP,
+    partial_payments        DECIMAL(10,2) DEFAULT 0,
+    remanent_payment        DECIMAL(10,2) DEFAULT 0,
+    status                  VARCHAR(20) NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'completed')),
+    notes                   TEXT,
+    gps_latitude            DECIMAL(9,6),
+    gps_longitude           DECIMAL(9,6),
+    created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Delivery routes
@@ -225,10 +288,22 @@ CREATE TABLE distribution.complaints (
 
 ### Database Migration
 
-If you have an existing database without the `category` column:
+If you have an existing database without the newer columns:
 
 ```sql
-ALTER TABLE distribution.coffee_variants ADD COLUMN category VARCHAR(1) NOT NULL DEFAULT 'C';
+-- Add profile fields to users
+ALTER TABLE distribution.users ADD COLUMN IF NOT EXISTS dni VARCHAR(20);
+ALTER TABLE distribution.users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+ALTER TABLE distribution.users ADD COLUMN IF NOT EXISTS residency VARCHAR(256);
+
+-- Add cycle_days to customers
+ALTER TABLE distribution.customers ADD COLUMN IF NOT EXISTS cycle_days INT NOT NULL DEFAULT 30;
+
+-- Add GPS and customer reference to sales
+ALTER TABLE distribution.sales ADD COLUMN IF NOT EXISTS customer_id INT REFERENCES distribution.customers(id);
+ALTER TABLE distribution.sales ADD COLUMN IF NOT EXISTS presentation VARCHAR(20) NOT NULL DEFAULT 'granel';
+ALTER TABLE distribution.sales ADD COLUMN IF NOT EXISTS gps_latitude DECIMAL(9,6);
+ALTER TABLE distribution.sales ADD COLUMN IF NOT EXISTS gps_longitude DECIMAL(9,6);
 ```
 
 ---
@@ -244,6 +319,30 @@ All endpoints are served via Flask (Python) on port 7071.
 | POST | `/api/auth/register/seller` | Register as seller | Public |
 | POST | `/api/auth/register` | Create user (admin only) | Admin |
 
+### Profile
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| GET | `/api/profile` | Get current user profile | Seller |
+| PUT | `/api/profile` | Update profile (name, dni, phone, residency) | Seller |
+| PUT | `/api/profile/password` | Change password (requires current password) | Seller |
+
+### Products Catalog
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| GET | `/api/products` | List all products | Admin |
+| POST | `/api/products` | Create product | Admin |
+| PUT | `/api/products/{id}` | Update product | Admin |
+| DELETE | `/api/products/{id}` | Delete product | Admin |
+| GET | `/api/seller/products` | List seller's active products | Seller |
+| POST | `/api/seller/products` | Add product to seller's catalog | Seller |
+| PUT | `/api/seller/products/{id}` | Update seller's product price | Seller |
+| DELETE | `/api/seller/products/{id}` | Remove product from seller's catalog | Seller |
+
+### Customer Tracking
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| GET | `/api/tracking/customers` | Get customer reorder cycle tracking | Seller |
+
 ### Inventory
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
@@ -257,7 +356,7 @@ All endpoints are served via Flask (Python) on port 7071.
 ### Sales
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
-| GET | `/api/sales` | List sales (filtered by role) | All |
+| GET | `/api/sales` | List sales (filtered by role, with filters + pagination) | All |
 | POST | `/api/sales` | Register a sale | Seller |
 | GET | `/api/sales/{id}` | Get sale details | All (own data) |
 | GET | `/api/reports/sales` | Sales reports/analytics | Admin |
@@ -334,12 +433,9 @@ All endpoints are served via Flask (Python) on port 7071.
 |---------|-------------|
 | **Summary Cards** | Total sales, revenue, active sellers, total sellers |
 | **Sales Trend Chart** | Line chart showing revenue over last 30 days |
-| **Revenue by Product** | Bar chart showing revenue per coffee variant |
-| **Revenue by Seller** | Pie chart showing revenue distribution |
-| **Sales Count by Seller** | Horizontal bar chart showing sales count |
-| **Sales Zones Map** | Interactive Leaflet map with bubble markers showing most frequent sales zones in Lima, Peru |
-| **Sales by Seller Table** | Detailed table with sales count and revenue |
-| **Sales by Date Table** | Scrollable table with daily sales data |
+| **Revenue by Product** | Bar chart showing revenue per product variant |
+| **Top 10 Sales by Total** | Horizontal bar chart showing largest individual sales |
+| **Most Frequent Sales Zones** | Interactive Leaflet map with circleMarkers sized by sales count per district in Lima, Peru |
 
 ### Seller Dashboard (`/dashboard`)
 
@@ -348,16 +444,25 @@ All endpoints are served via Flask (Python) on port 7071.
 | **Summary Cards** | Pending routes, total sales, total revenue |
 | **Sales Trend Chart** | Line chart showing personal revenue over time |
 | **Sales by Product** | Bar chart showing revenue per product |
-| **Recent Sales Table** | Last 10 sales with date, variant, customer, qty, total |
+| **Top 5 Clients** | Horizontal bar chart showing best customers by revenue |
+| **Sales by District** | Interactive Leaflet bubble map showing sales distribution across Lima districts |
+| **Recent Sales Table** | Last 10 sales with date, product, customer, qty, total |
 
 ### Sales Zones Map
 
 - **Technology**: Leaflet with OpenStreetMap tiles
 - **Visualization**: Bubble markers sized by number of sales
 - **Location**: Centered on Lima, Peru (-12.05, -77.03)
-- **Aggregation**: Sales grouped into ~1km grid zones
+- **Aggregation**: Sales grouped by 2-decimal GPS precision into zones
 - **Interactivity**: Click bubbles to see sales count and revenue
 - **Color**: Amber (#f59e0b) with opacity based on density
+
+### District Bubble Map
+
+- **Technology**: Leaflet with OpenStreetMap tiles
+- **Visualization**: CircleMarkers sized by sales count per district
+- **Location**: 22 Lima districts pre-mapped with coordinates
+- **Interactivity**: Hover to see district name and sale count
 
 ### Inventory Page Features
 
@@ -367,6 +472,30 @@ All endpoints are served via Flask (Python) on port 7071.
   - **C** (Economy): Gray badge
 - Stock status indicators (In Stock / Low Stock)
 - Warehouse location tracking
+
+### Customer Tracking Features
+
+- Last sale date and next expected date (based on cycle_days)
+- Days since last sale
+- Status indicators: Active (≤90 days), Inactive (>90 days)
+- Filter tabs for All / Active / Inactive / Overdue
+
+### Products Features
+
+- **Admin**: Full CRUD on product catalog with recommended prices
+- **Seller**: Pick products from catalog, set own real price, view margin (real - recommended = seller revenue)
+
+### Profile Features
+
+- Personal info: full name, DNI, phone
+- Structured residency: Departamento → Provincia → Distrito (Peru only)
+- Password change with current password verification
+
+### Sales Filters & Pagination
+
+- **Filters**: Year, Month, Day, Customer Name, District (instant client-side)
+- **Pagination**: 100 rows per page with First / Prev / Next / Last controls
+- **Available on**: Both admin and seller Sales pages
 
 ---
 
@@ -426,7 +555,9 @@ API runs at `http://localhost:7071`
 ### 6. Start Frontend
 
 ```bash
-export DATABASE_URL="postgresql://cafeadmin:YOUR_PASSWORD@YOUR_HOST:5432/cafe_distribution"
+cd web
+npm install
+npm run dev
 ```
 
 Frontend runs at `http://localhost:5173`
@@ -465,7 +596,10 @@ Creates test data with Lima, Peru locations:
 | Data | Records | Details |
 |------|---------|---------|
 | Coffee Variants | 6 | Categories A ($15-17), B ($13-15), C ($11-13) |
+| Products | 8 | Admin catalog with recommended prices |
+| Seller Products | 8 | Seller picks with marked-up prices |
 | Inventory | 6 | Stock for each variant (20-200 units) |
+| Customers | 5 | With cycle_days for reorder tracking |
 | Sales | 40 | Spread across 30 days with GPS coordinates |
 | Routes | 4 | With GPS waypoints in Lima districts |
 | Waypoints | 16 | Real addresses in Lima, Peru |
@@ -482,8 +616,8 @@ Creates test data with Lima, Peru locations:
 
 #### Customer Locations
 
-Sales are recorded at GPS coordinates across 15 Lima districts:
-Jesús María, Miraflores, San Isidro, Barranco, San Borja, Surco, La Molina, Pueblo Libre, Lince, Magdalena del Mar, San Miguel, Breña, Cercado de Lima, Rímac, Los Olivos
+Sales are recorded at GPS coordinates across 22 Lima districts:
+Jesús María, Miraflores, San Isidro, Barranco, San Borja, Surco, La Molina, Pueblo Libre, Lince, Magdalena del Mar, San Miguel, Breña, Cercado de Lima, Rímac, Los Olivos, Ate, Comas, San Juan de Lurigancho, Villa El Salvador, Villa María del Triunfo, Santa Anita, Chaclacayo
 
 ```bash
 export DATABASE_URL="postgresql://..."
@@ -526,6 +660,8 @@ python seed_data.py
 | Map not showing | Restart frontend, check Leaflet CSS loads |
 | Port 7071 in use | Change port in `api/app.py` or kill existing process |
 | `current transaction is aborted` | Restart Flask server to reset connection |
+| API connection refused (production) | Azure Consumption plan cold start — first request takes 30-60 seconds |
+| Frontend shows localhost errors | Ensure `VITE_API_BASE_URL` was set during build |
 
 ### Quick Commands
 
@@ -544,6 +680,12 @@ python seed_users.py && python seed_data.py
 
 # Type check frontend
 cd web && npm run typecheck
+
+# Lint frontend
+cd web && npm run lint
+
+# Lint API
+cd api && flake8 . --max-line-length=120
 ```
 
 ### Frontend Routes
@@ -555,10 +697,15 @@ cd web && npm run typecheck
 | `/login/admin` | Admin login | Public |
 | `/register/seller` | Seller registration | Public |
 | `/dashboard` | Seller dashboard | Seller |
+| `/customers` | Customer management | Seller |
+| `/tracking` | Customer reorder tracking | Seller |
+| `/products` | Seller product catalog | Seller |
+| `/sales` | Sales list + filters + pagination | Seller |
+| `/profile` | Seller profile | Seller |
 | `/admin` | Admin dashboard | Admin |
+| `/admin/products` | Product catalog management | Admin |
 | `/admin/inventory` | Inventory management | Admin |
-| `/admin/sales` | Sales list | Admin |
-| `/admin/routes` | Routes management | Admin |
+| `/admin/sales` | Sales list + filters + pagination | Admin |
 | `/admin/complaints` | Complaints management | Admin |
 | `/admin/sellers` | Seller management | Admin |
 
@@ -566,34 +713,19 @@ cd web && npm run typecheck
 
 ## GitHub Actions Secrets
 
-Only **2 secrets** are needed for CD deployment:
+**3 secrets** are needed for CD deployment:
 
 | Secret Name | How to get it |
 |-------------|---------------|
 | `AZURE_PROD_PUBLISH_PROFILE` | `az webapp deployment list-publishing-profiles --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg" --xml` |
 | `AZURE_PROD_STATIC_WEB_APPS_TOKEN` | Azure Portal → Static Web App → Manage deployment tokens |
+| `AZURE_DATABASE_URL` | `az webapp config appsettings list --name cafe-dist-production-api --resource-group coffee-distribution-rg --query "[?name=='DATABASE_URL'].value" -o tsv` |
 
 ### Where to configure
 
 GitHub → Repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
 See [DEVOPS.md](DEVOPS.md) for full deployment instructions.
-
-### Frontend Routes
-
-| URL | Page | Access |
-|-----|------|--------|
-| `/login` | Landing page (choose role) | Public |
-| `/login/seller` | Seller login | Public |
-| `/login/admin` | Admin login | Public |
-| `/register/seller` | Seller registration | Public |
-| `/dashboard` | Seller dashboard | Seller |
-| `/admin` | Admin dashboard | Admin |
-| `/admin/inventory` | Inventory management | Admin |
-| `/admin/sales` | Sales list | Admin |
-| `/admin/routes` | Routes management | Admin |
-| `/admin/complaints` | Complaints management | Admin |
-| `/admin/sellers` | Seller management | Admin |
 
 ---
 

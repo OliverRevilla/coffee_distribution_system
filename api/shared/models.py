@@ -52,6 +52,9 @@ class User(BaseModel):
     full_name: str
     role: UserRole
     status: UserStatus = UserStatus.ACTIVE
+    dni: Optional[str] = None
+    phone: Optional[str] = None
+    residency: Optional[str] = None
     azure_b2c_id: str
     created_at: Optional[datetime] = None
 

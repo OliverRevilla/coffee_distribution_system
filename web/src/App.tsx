@@ -6,12 +6,18 @@ import SellerLoginPage from './pages/SellerLoginPage'
 import AdminLoginPage from './pages/AdminLoginPage'
 import SellerRegisterPage from './pages/SellerRegisterPage'
 import DashboardPage from './pages/seller/DashboardPage'
+import CustomersPage from './pages/seller/CustomersPage'
+import SellerSalesPage from './pages/seller/SalesPage'
+import TrackingPage from './pages/seller/TrackingPage'
+import SellerProductsPage from './pages/seller/ProductsPage'
+import ProfilePage from './pages/seller/ProfilePage'
 import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 import InventoryPage from './pages/admin/InventoryPage'
 import SalesPage from './pages/admin/SalesPage'
 import RoutesPage from './pages/admin/RoutesPage'
 import ComplaintsPage from './pages/admin/ComplaintsPage'
 import SellersPage from './pages/admin/SellersPage'
+import AdminProductsPage from './pages/admin/ProductsPage'
 
 function App() {
   return (
@@ -25,7 +31,13 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="customers" element={<CustomersPage />} />
+            <Route path="tracking" element={<TrackingPage />} />
+            <Route path="products" element={<SellerProductsPage />} />
+            <Route path="profile" element={<ProfilePage />} />
+            <Route path="sales" element={<SellerSalesPage />} />
             <Route path="admin" element={<AdminDashboardPage />} />
+            <Route path="admin/products" element={<AdminProductsPage />} />
             <Route path="admin/inventory" element={<InventoryPage />} />
             <Route path="admin/sales" element={<SalesPage />} />
             <Route path="admin/routes" element={<RoutesPage />} />

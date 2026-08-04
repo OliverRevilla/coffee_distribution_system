@@ -113,7 +113,7 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
       appCommandLine: 'gunicorn --bind=0.0.0.0 --timeout 600 app:app'
       appSettings: [
         { name: 'DATABASE_URL', value: 'postgresql://${postgresAdminLogin}:${postgresAdminPassword}@${postgresServer.properties.fullyQualifiedDomainName}:5432/${postgresDatabaseName}?sslmode=require' }
-        { name: 'AUTH_SECRET_KEY', value: '${keyVault.properties.vaultUri}secrets/AUTH-SECRET-KEY' }
+        { name: 'AUTH_SECRET_KEY', value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=AUTH-SECRET-KEY)' }
         { name: 'AZURE_MAPS_KEY', value: azureMapsKey }
         { name: 'APPINSIGHTS_INSTRUMENTATIONKEY', value: appInsights.properties.InstrumentationKey }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
