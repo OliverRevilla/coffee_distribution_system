@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {
     "origins": [
-        "https://cafe-dist-production-web.azurestaticapps.net",
+        "https://gray-plant-0f392e01e.7.azurestaticapps.net",
         "http://localhost:5173",
     ],
     "supports_credentials": True,
