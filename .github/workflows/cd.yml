@@ -25,7 +25,6 @@ jobs:
   deploy-infrastructure:
     if: github.event_name == 'workflow_dispatch' && inputs.deploy_infrastructure == true
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -74,7 +73,6 @@ jobs:
   # ────────────────────────────────────────────────────────────
   deploy-code:
     runs-on: ubuntu-latest
-    environment: production
     needs: deploy-infrastructure
     if: always() && !cancelled() && (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
     steps:
