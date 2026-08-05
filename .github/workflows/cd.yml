@@ -4,43 +4,145 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy_infrastructure:
+        description: "Deploy Azure infrastructure via Bicep"
+        type: boolean
+        default: false
+      seed_data:
+        description: "Seed test data (requires infrastructure deploy)"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  deploy-production:
+  # ────────────────────────────────────────────────────────────
+  # Infrastructure deployment (optional — manual trigger only)
+  # ────────────────────────────────────────────────────────────
+  deploy-infrastructure:
+    if: inputs.deploy_infrastructure == true
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
 
-      # ─── Deploy Flask API to App Service ──────────────────
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep Infrastructure
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az deployment group create \
+              --resource-group "coffee-distribution-rg" \
+              --template-file infrastructure/main.bicep \
+              --parameters \
+                environmentName=production \
+                postgresAdminPassword="${{ secrets.POSTGRES_ADMIN_PASSWORD }}" \
+                azureMapsKey="${{ secrets.AZURE_MAPS_KEY }}" \
+                authSecretKey="${{ secrets.AUTH_SECRET_KEY }}" \
+              --output table
+
+      - name: Output resource URLs
+        run: |
+          API_URL=$(az webapp show \
+            --name "cafe-dist-production-api" \
+            --resource-group "coffee-distribution-rg" \
+            --query "defaultHostName" -o tsv)
+          WEB_URL=$(az staticwebapp show \
+            --name "cafe-dist-production-web" \
+            --resource-group "coffee-distribution-rg" \
+            --query "defaultHostname" -o tsv)
+          echo "### Infrastructure Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- API: https://$API_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- Web: https://$WEB_URL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Next steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Create the GitHub secrets/variables listed in DEVOPS.md" >> $GITHUB_STEP_SUMMARY
+          echo "2. Re-run this workflow without 'deploy_infrastructure'" >> $GITHUB_STEP_SUMMARY
+
+  # ────────────────────────────────────────────────────────────
+  # Code deployment (runs on every push to main)
+  # ────────────────────────────────────────────────────────────
+  deploy-code:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: ${{ inputs.deploy_infrastructure == true && 'deploy-infrastructure' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ─── Azure Login ──────────────────────────────────────
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ─── Database Schema (idempotent) ────────────────────
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply schema to database
+        env:
+          DATABASE_URL: ${{ secrets.AZURE_DATABASE_URL }}
+        run: psql "$DATABASE_URL" -f infrastructure/schema.sql
+
+      # ─── Seed Users (only on infrastructure deploy) ──────
+      - name: Seed users
+        if: inputs.deploy_infrastructure == true
+        env:
+          DATABASE_URL: ${{ secrets.AZURE_DATABASE_URL }}
+        run: |
+          pip install psycopg2-binary
+          python seed_users.py
+
+      # ─── Seed Test Data (only if selected) ───────────────
+      - name: Seed test data
+        if: inputs.seed_data == true && inputs.deploy_infrastructure == true
+        env:
+          DATABASE_URL: ${{ secrets.AZURE_DATABASE_URL }}
+        run: python seed_data.py
+
+      # ─── Deploy Flask API ────────────────────────────────
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r api/requirements.txt -t api/.python_packages
-      - name: Deploy to App Service
+
+      - name: Install API dependencies
+        run: pip install -r api/requirements.txt -t api/.python_packages
+
+      - name: Deploy API to App Service
         uses: Azure/webapps-deploy@v3
         with:
           app-name: cafe-dist-production-api
           publish-profile: ${{ secrets.AZURE_PROD_PUBLISH_PROFILE }}
           package: api/
 
-      # ─── Run Database Schema ─────────────────────────────
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - name: Apply schema to production database
-        env:
-          DATABASE_URL: ${{ secrets.AZURE_DATABASE_URL }}
-        run: psql "$DATABASE_URL" -f infrastructure/schema.sql
-
-      # ─── Deploy Static Web App ──────────────────────────
+      # ─── Build & Deploy Web ──────────────────────────────
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
       - name: Build Web App
         run: cd web && npm ci && npm run build
         env:
-          VITE_API_BASE_URL: https://cafe-dist-production-api.azurewebsites.net/api
-      - name: Deploy Static Web Apps
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_ENTRA_TENANT_NAME: ${{ vars.VITE_ENTRA_TENANT_NAME }}
+          VITE_ENTRA_CLIENT_ID: ${{ vars.VITE_ENTRA_CLIENT_ID }}
+          VITE_ENTRA_POLICY_NAME: ${{ vars.VITE_ENTRA_POLICY_NAME }}
+
+      - name: Deploy to Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_PROD_STATIC_WEB_APPS_TOKEN }}
@@ -50,7 +152,20 @@ jobs:
           output_location: "dist"
 
       # ─── Health Check ─────────────────────────────────────
+      - name: Wait for API cold start
+        run: sleep 30
+
       - name: Verify API health
         run: |
-          sleep 30
-          curl -sf https://cafe-dist-production-api.azurewebsites.net/api/health || echo "Health check failed"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://cafe-dist-production-api.azurewebsites.net/api/health")
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "API health check passed"
+            echo "### Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "- API: https://cafe-dist-production-api.azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+            echo "- Web: ${{ vars.VITE_API_BASE_URL }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "API health check failed (HTTP $HTTP_STATUS)"
+            echo "### Deployment Completed with Warning" >> $GITHUB_STEP_SUMMARY
+            echo "API returned HTTP $HTTP_STATUS — may still be starting (Consumption plan cold start)" >> $GITHUB_STEP_SUMMARY
+          fi

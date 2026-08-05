@@ -52,16 +52,43 @@ az group create \
 
 ---
 
-## Step 3: Create Service Principal (for GitHub Actions)
+## Step 3: Create Service Principal with OIDC (for GitHub Actions)
 
 ```bash
-az ad sp create-for-rbac \
-  --name "coffee-dist-cicd" \
-  --role Contributor \
-  --scopes /subscriptions/$(az account show --query id -o tsv)
+# Create the app registration
+APP_REG=$(az ad app create \
+  --display-name "coffee-dist-cicd" \
+  --sign-in-audience "AzureADMyOrg" \
+  --query "{id:appId, objectId:id}" -o json)
+
+APP_ID=$(echo $APP_REG | jq -r '.id')
+APP_OBJECT_ID=$(echo $APP_REG | jq -r '.objectId')
+
+# Create service principal
+az ad sp create --id $APP_ID
+
+# Assign Contributor role
+az role assignment create \
+  --assignee $APP_ID \
+  --role "Contributor" \
+  --scope "/subscriptions/$(az account show --query id -o tsv)"
+
+# Create federated credential for GitHub (main branch)
+az rest --method POST \
+  --url "https://graph.microsoft.com/v1.0/applications/$APP_OBJECT_ID/federatedIdentityCredentials" \
+  --body '{
+    "name": "github-main",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:OliverRevilla/coffee_distribution_system:ref:refs/heads/main",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+echo "AZURE_CLIENT_ID=$APP_ID"
+echo "AZURE_TENANT_ID=$(az account show --query tenantId -o tsv)"
+echo "AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)"
 ```
 
-**Copy the entire JSON output.**
+**Copy the three values above — you'll need them for GitHub secrets.**
 
 ---
 
@@ -93,88 +120,61 @@ az maps account keys list \
 
 ---
 
-## Step 6: Deploy Infrastructure with Bicep
+## Step 6: Generate Auth Secret Key
 
 ```bash
-az deployment group create \
-  --resource-group "coffee-distribution-rg" \
-  --template-file infrastructure/main.bicep \
-  --parameters \
-    environmentName=production \
-    postgresAdminPassword="<YOUR_POSTGRES_PASSWORD>" \
-    azureMapsKey="<YOUR_AZURE_MAPS_KEY>" \
-    authSecretKey="$(openssl rand -hex 32)"
+openssl rand -hex 32
 ```
 
----
-
-## Step 7: Apply Database Schema
-
-```bash
-export DATABASE_URL="postgresql://cafeadmin:<YOUR_PASSWORD>@cafedistproductionpg.postgres.database.azure.com:5432/cafe_distribution?sslmode=require"
-psql $DATABASE_URL -f infrastructure/schema.sql
-python seed_users.py
-```
+**Save this key.**
 
 ---
 
-## Step 8: Get App Service Publish Profile
+## Step 7: Deploy Infrastructure via GitHub Actions
 
-```bash
-az webapp deployment list-publishing-profiles \
-  --name "cafe-dist-production-api" \
-  --resource-group "coffee-distribution-rg" \
-  --xml
-```
+1. Push your code to GitHub
+2. Go to **Actions → CD Pipeline → Run workflow**
+3. Check **deploy_infrastructure** and optionally **seed_data**
+4. Click **Run workflow**
 
-**Copy the entire XML output.**
+The workflow will deploy all Azure resources via Bicep, apply the schema, and optionally seed test data.
 
 ---
 
-## Step 9: Get Static Web App Token
+## Step 8: Configure GitHub Secrets and Variables
 
-1. Go to https://portal.azure.com
-2. Search for **cafe-dist-production-web**
-3. Click **Manage deployment tokens**
-4. Copy the token
+After the infrastructure is deployed, configure the secrets and variables.
 
----
+### Secrets (sensitive — never logged)
 
-## Step 10: Get DATABASE_URL
+Go to **GitHub → Settings → Secrets and variables → Actions → New repository secret**
 
-```bash
-az webapp config appsettings list \
-  --name cafe-dist-production-api \
-  --resource-group coffee-distribution-rg \
-  --query "[?name=='DATABASE_URL'].value" -o tsv
-```
+| Secret Name | How to get it |
+|-------------|---------------|
+| `AZURE_CLIENT_ID` | From Step 3 — the `appId` output |
+| `AZURE_TENANT_ID` | From Step 3 — `az account show --query tenantId -o tsv` |
+| `AZURE_SUBSCRIPTION_ID` | From Step 3 — `az account show --query id -o tsv` |
+| `POSTGRES_ADMIN_PASSWORD` | From Step 4 — the password you generated |
+| `AZURE_MAPS_KEY` | From Step 5 — Azure Maps primary key |
+| `AUTH_SECRET_KEY` | From Step 6 — the hex key you generated |
+| `AZURE_PROD_PUBLISH_PROFILE` | `az webapp deployment list-publishing-profiles --name "cafe-dist-production-api" --resource-group "coffee-distribution-rg" --xml` |
+| `AZURE_PROD_STATIC_WEB_APPS_TOKEN` | Azure Portal → Static Web App → Manage deployment tokens |
+| `AZURE_DATABASE_URL` | `az webapp config appsettings list --name cafe-dist-production-api --resource-group coffee-distribution-rg --query "[?name=='DATABASE_URL'].value" -o tsv` |
 
-**Copy the entire output.**
+### Variables (non-sensitive — visible in logs)
 
----
+Go to **GitHub → Settings → Secrets and variables → Actions → Variables → New repository variable**
 
-## Step 11: Configure GitHub Secrets
-
-Go to **GitHub → Repository → Settings → Secrets and variables → Actions → New repository secret**
-
-### Required Secrets
-
-| Secret Name | Value | Where to get it |
-|-------------|-------|-----------------|
-| `AZURE_PROD_PUBLISH_PROFILE` | XML publish profile | Step 8 — `az webapp deployment list-publishing-profiles --xml` |
-| `AZURE_PROD_STATIC_WEB_APPS_TOKEN` | Deployment token | Step 9 — Azure Portal → Static Web App → Manage deployment tokens |
-| `AZURE_DATABASE_URL` | PostgreSQL connection string | Step 10 — `az webapp config appsettings list` |
-
-### How to create a secret
-
-1. Click **New repository secret**
-2. Enter the **Name** exactly as shown above
-3. Paste the **Value**
-4. Click **Add secret**
+| Variable Name | How to get it |
+|---------------|---------------|
+| `VITE_API_BASE_URL` | `echo "https://$(az webapp show --name 'cafe-dist-production-api' --resource-group 'coffee-distribution-rg' --query 'defaultHostName' -o tsv)/api"` |
+| `VITE_ENTRA_TENANT_NAME` | Your Entra External ID tenant name (e.g. `cafedistribution`) |
+| `VITE_ENTRA_CLIENT_ID` | From `infrastructure/setup-entra.sh` output — Web App registration `appId` |
+| `VITE_ENTRA_POLICY_NAME` | From `infrastructure/setup-entra.sh` output — e.g. `B2C_1_susi` |
 
 ---
 
-## Step 12: Push to GitHub
+## Step 9: Push to GitHub
 
 ```bash
 git add .
@@ -182,7 +182,7 @@ git commit -m "Configure CI/CD pipeline"
 git push origin main
 ```
 
-The CD pipeline will automatically deploy to Azure.
+The CD pipeline will automatically deploy on push to `main`.
 
 ---
 
@@ -199,20 +199,52 @@ The CD pipeline will automatically deploy to Azure.
 
 ### CD Pipeline (runs on push to `main`)
 
+Two modes:
+
+#### Default mode (code updates)
+
 | Step | What it does |
 |------|-------------|
+| Apply schema | Runs `schema.sql` (idempotent — safe every deploy) |
 | Deploy API | Deploys Flask app to Azure App Service |
-| Run Database Schema | Installs psql client, retrieves DATABASE_URL from App Service, runs `schema.sql` (idempotent — safe to run every deploy) |
-| Deploy Web | Builds React app (with `VITE_API_BASE_URL`) and deploys to Static Web Apps |
+| Build & Deploy Web | Builds React with env vars from GitHub variables, deploys to Static Web Apps |
 | Health Check | Verifies API is responding after 30s (handles Consumption plan cold start) |
 
-### CD Pipeline Secrets Flow
+#### Infrastructure mode (manual trigger — `deploy_infrastructure: true`)
+
+| Step | What it does |
+|------|-------------|
+| Deploy Bicep | Creates/updates all Azure resources |
+| Apply schema | Runs `schema.sql` |
+| Seed users | Creates admin and test seller accounts |
+| Seed data | (optional) Creates test data with Lima locations |
+| Deploy API | Deploys Flask app |
+| Build & Deploy Web | Builds & deploys React app |
+| Health Check | Verifies API health |
+
+### Secrets Flow
 
 ```
-AZURE_PROD_PUBLISH_PROFILE  →  Deploy Flask API to App Service
-AZURE_DATABASE_URL          →  Run schema.sql against PostgreSQL
-VITE_API_BASE_URL           →  Hardcoded in cd.yml, baked into React build
-AZURE_PROD_STATIC_WEB_APPS_TOKEN  →  Deploy React app to Static Web Apps
+OIDC Login:
+  AZURE_CLIENT_ID       →  az login (federated credential)
+  AZURE_TENANT_ID       →  az login
+  AZURE_SUBSCRIPTION_ID →  az login
+
+Infrastructure:
+  POSTGRES_ADMIN_PASSWORD  →  Bicep param (PostgreSQL admin)
+  AZURE_MAPS_KEY           →  Bicep param (Azure Maps)
+  AUTH_SECRET_KEY          →  Bicep param (token signing)
+
+Code deployment:
+  AZURE_PROD_PUBLISH_PROFILE        →  Deploy Flask to App Service
+  AZURE_DATABASE_URL                →  Run schema.sql
+  AZURE_PROD_STATIC_WEB_APPS_TOKEN  →  Deploy React to Static Web Apps
+
+Frontend build (injected as env vars):
+  VITE_API_BASE_URL        →  Baked into React build
+  VITE_ENTRA_TENANT_NAME   →  Baked into React build
+  VITE_ENTRA_CLIENT_ID     →  Baked into React build
+  VITE_ENTRA_POLICY_NAME   →  Baked into React build
 ```
 
 ---
@@ -245,12 +277,18 @@ The API runs on Azure **Consumption plan (Y1)**, which auto-stops after ~20 minu
 
 ### Frontend Shows Localhost Errors
 
-If the production frontend shows `http://localhost:7071` errors, the build was done without `VITE_API_BASE_URL`. The CD pipeline sets this automatically, but manual builds must include it:
+If the production frontend shows `http://localhost:7071` errors, the build was done without `VITE_API_BASE_URL`. The CD pipeline sets this automatically via GitHub variables, but manual builds must include it:
 
 ```bash
 cd web
 VITE_API_BASE_URL=https://cafe-dist-production-api.azurewebsites.net/api npm run build
 ```
+
+### OIDC Login Fails
+
+- Verify the federated credential was created: `az ad app credential list --id <APP_ID>`
+- Ensure the `subject` matches your repo exactly: `repo:OliverRevilla/coffee_distribution_system:ref:refs/heads/main`
+- Check the app has the `Contributor` role: `az role assignment list --assignee <APP_ID>`
 
 ---
 
